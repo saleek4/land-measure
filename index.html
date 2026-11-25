@@ -467,12 +467,38 @@ function showText(title,text){
   $('#shClose').onclick=closeSheet;
   $('#shCopy').onclick=function(){var ta=$('#shTxt');ta.select();ta.setSelectionRange(0,999999);var ok=false;try{ok=document.execCommand('copy')}catch(e){}if(!ok&&navigator.clipboard){navigator.clipboard.writeText(text).then(function(){toast('Copied')},function(){toast('Select the text and copy')});return}toast(ok?'Copied':'Select the text and copy')};
 }
-function share(title,text,filename,mime){
+function share(title,text,filename,mime,done){
+  var ok=function(){if(done)done()};
   try{
-    if(filename&&window.File&&navigator.canShare){var f=new File([text],filename,{type:mime||'text/plain'});if(navigator.canShare({files:[f]})){navigator.share({files:[f],title:title}).catch(function(e){if(!e||e.name!=='AbortError')showText(title,text)});return}}
-    if(navigator.share){navigator.share({title:title,text:text}).catch(function(e){if(!e||e.name!=='AbortError')showText(title,text)});return}
+    if(filename&&window.File&&navigator.canShare){var f=new File([text],filename,{type:mime||'text/plain'});if(navigator.canShare({files:[f]})){navigator.share({files:[f],title:title}).then(ok,function(e){if(!e||e.name!=='AbortError')showText(title,text)});return}}
+    if(navigator.share){navigator.share({title:title,text:text}).then(ok,function(e){if(!e||e.name!=='AbortError')showText(title,text)});return}
   }catch(e){}
   showText(title,text);
+}
+// ---------- backup: saved plots live only inside this app, so a backup file is the only safety net ----------
+var LBK='lm.backup.v1',LBA='lm.backupask.v1';
+function lastBackup(){return load(LBK,null)}
+function backupNeeded(){if(!S.plots.length)return false;var lb=lastBackup();return!lb||Date.now()-lb.t>7*864e5||S.plots.length>lb.n}
+function backupAgo(){var lb=lastBackup();if(!lb)return'never';var d=Math.floor((Date.now()-lb.t)/864e5);return(d<1?'today':d===1?'yesterday':d+' days ago')+' ('+lb.n+' plot'+(lb.n===1?'':'s')+')'}
+function backupJSON(){var pl=clone(S.plots);pl.forEach(function(p){allRings(p).forEach(function(r){r.forEach(function(c){delete c.ph})})});return JSON.stringify({app:'land-measure',v:2,exported:Date.now(),plots:pl},null,1)}
+function backupNow(after){
+  if(!S.plots.length){toast('No saved plots to back up yet');return}
+  var d=new Date(),ymd=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2),n=S.plots.length;
+  share('Land Measure backup',backupJSON(),'land-measure-backup-'+ymd+'.json','application/json',function(){store(LBK,{t:Date.now(),n:n});if(after)after();else toast('Backup saved. Keep that file safe')});
+}
+function isStandalone(){return window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)}
+function isIOS(){return/iPhone|iPad|iPod/.test(navigator.userAgent||'')}
+function backupAsk(){
+  if(!backupNeeded())return;var lb=lastBackup();
+  if(lb&&Date.now()-lb.t<864e5)return;
+  if(Date.now()-load(LBA,0)<3*36e5)return;store(LBA,Date.now());
+  choose('Back up your plots?','Saved plots live only inside this app. If you delete the Home Screen icon or clear Safari data, they are erased for good. Save a backup file to Files, iCloud Drive or WhatsApp now.',[{label:'Back up now',val:true,cls:'pri'},{label:'Later',val:false}]).then(function(v){if(v)backupNow()});
+}
+function backupCard(){
+  var h='';
+  if(isIOS()&&!isStandalone())h+='<div class="card"><div class="small"><b>This is a Safari tab, not the Home Screen icon.</b> Plots saved here do not show in the icon, and the other way round. Pick one and always open it the same way.</div></div>';
+  if(backupNeeded())h+='<div class="card" style="border:2px solid var(--warn)"><h2>Back up your plots</h2><div class="small">Last backup: '+backupAgo()+'. Plots live only inside this app. Deleting the Home Screen icon or clearing Safari data erases all of them.</div><button class="pri" id="bNow" style="width:100%;margin-top:10px">Back up now</button></div>';
+  return h;
 }
 
 // ---------- GPS ----------
@@ -1707,7 +1733,7 @@ function saveParts(){
     var base=Date.now();
     made.reverse().forEach(function(m,i){var p=buildPlot(m);p.ts=base+i;p.splitOf=o.id||null;S.plots.unshift(p)});
     if(del&&o.id)S.plots=S.plots.filter(function(x){return x.id!==o.id});
-    savePlots();M.split=null;M.view=null;S.tab='plots';S.viewId=null;render();gcPhotos();toast(made.length+' parts saved as plots');
+    savePlots();M.split=null;M.view=null;S.tab='plots';S.viewId=null;render();gcPhotos();toast(made.length+' parts saved as plots');setTimeout(backupAsk,600);
   };
   var cross=HX.some(function(H,hi){var c=0;res.parts.forEach(function(pt){if(pt.poly.length>=3&&H.some(function(p){return pointInPoly(p,pt.poly)}))c++});return c>1});
   var msg='Each part is saved as a separate plot.'+(cross?' A cut passes through an excluded area, so check the areas of the parts next to it.':'');
@@ -1839,18 +1865,19 @@ function savePlot(){
   var p=buildPlot(d);
   S.plots.unshift(p);savePlots();
   S.draft=blankDraft(d.mode);saveDraft();M.ring=-1;
-  S.tab='plots';S.viewId=p.id;render();toast('Saved');
+  S.tab='plots';S.viewId=p.id;render();toast('Saved');setTimeout(backupAsk,600);
 }
 
 function renderPlots(){
   if(S.viewId){var p=S.plots.filter(function(x){return x.id===S.viewId})[0];if(p)return renderDetail(p);S.viewId=null}
   var f=S.filter.toLowerCase(),list=S.plots.filter(function(p){return!f||(p.name+' '+p.place).toLowerCase().indexOf(f)>=0});
-  var h='<div class="card"><input id="fSearch" placeholder="Search by name or place" value="'+esc(S.filter)+'" autocomplete="off"></div>';
+  var h=backupCard()+'<div class="card"><input id="fSearch" placeholder="Search by name or place" value="'+esc(S.filter)+'" autocomplete="off"></div>';
   if(!S.plots.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">No saved plots yet. Measure one on the first tab.</div>';
   list.forEach(function(p){
     h+='<button class="plotitem" data-id="'+p.id+'"><b>'+esc(p.name)+'</b><div class="mut small">'+esc(p.place||'No place')+' · '+fdate(p.ts)+(p.src&&p.src!=='gps'?' · '+methLabel(p.src):'')+'</div><div style="margin-top:6px;font-weight:700">'+fa(p.area,S.settings.unit)+' '+UNIT[S.settings.unit].l+' <span class="mut small" style="font-weight:400">('+fa(p.area,S.settings.unit==='acre'?'cent':'acre')+' '+UNIT[S.settings.unit==='acre'?'cent':'acre'].l+')</span></div></button>';
   });
   $('#app').innerHTML=h;
+  if($('#bNow'))$('#bNow').onclick=function(){backupNow(function(){toast('Backup saved. Keep that file safe');renderPlots()})};
   var s=$('#fSearch');if(s)s.oninput=function(){S.filter=this.value;var pos=this.selectionStart;renderPlots();var n=$('#fSearch');n.focus();n.setSelectionRange(pos,pos)};
   document.querySelectorAll('.plotitem').forEach(function(b){b.onclick=function(){S.viewId=b.dataset.id;renderPlots();window.scrollTo(0,0)}});
 }
@@ -1951,18 +1978,18 @@ function renderMore(){
   h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+fl(v,0)})+'</select>';
   h+='<label>Main area unit</label><select id="sUnit"><option value="cent"'+(st.unit==='cent'?' selected':'')+'>cent</option><option value="acre"'+(st.unit==='acre'?' selected':'')+'>acre</option><option value="sqm"'+(st.unit==='sqm'?' selected':'')+'>sq m</option><option value="sqft"'+(st.unit==='sqft'?' selected':'')+'>sq ft</option></select>';
   h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select></div>';
-  h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. Take a backup now and then.</div><div class="row" style="margin-top:10px"><button id="bExp" class="pri">Export all</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
+  h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. <b>If you delete the Home Screen icon, or clear Safari website data, every saved plot is erased.</b> Photos are not in the backup file. Last backup: '+backupAgo()+'.</div>'+(isIOS()&&!isStandalone()?'<div class="small" style="margin-top:6px">You are in a Safari tab now. It keeps its own plots, separate from the Home Screen icon.</div>':'')+'<div class="row" style="margin-top:10px"><button id="bExp" class="pri">Back up all plots</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
   h+='<div class="card"><h2>How accurate is this?</h2><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></div>';
   h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></div>';
   h+='<div class="card"><h2>More tools (Map tab &rarr; Tools)</h2><ul class="tips small"><li><b>Split:</b> divide a plot into equal parts, by ratio, by cents, or with a road strip. Ideas are shown as small pictures. Save the parts as separate plots.</li><li><b>Exclude an area:</b> mark a house or pond. Its area is taken out and the net area is shown.</li><li><b>Record area:</b> type the area from the deed or Ente Bhoomi to see the difference in %.</li><li><b>Tape lengths:</b> type the side lengths and the crosses (tapes straight across the plot) and the app draws the plot and works out the area. It tells you the fewest crosses needed (corners &minus; 3). Tap a corner to take the crosses from it, or let the app suggest the best corner. A tape is far more exact than GPS for small plots.</li><li><b>Magnifier:</b> when you drag a point, a round magnifier shows the spot above your finger.</li><li><b>Point notes and photos:</b> tap a point to add a note or a photo.</li><li>On a saved plot you can make a <b>plan PDF</b>, a picture, or a <b>KML</b> file for Google Earth.</li></ul></div>';
   h+='<div class="card"><h2>Tips for best results</h2><ul class="tips small"><li>Stand in the open, away from trees, walls and vehicles.</li><li>Wait until the GPS chip at the top shows green or amber before you capture.</li><li>Take all corners in one session, within about 15 minutes. Common GPS errors then cancel out in the area.</li><li>Take corners in order around the plot (clockwise or anticlockwise).</li><li>Keep the phone steady and the screen on. The app asks the phone to stay awake.</li><li>Measure again on another day or time of day and compare. If the two areas differ, trust neither fully.</li></ul></div>';
-  h+='<div class="card"><h2>Install on iPhone</h2><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></div>';
+  h+='<div class="card"><h2>Install on iPhone</h2><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li><b>Do not delete the icon.</b> Deleting it erases the plots saved inside it. Back up first (More tab, Backup).</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></div>';
   $('#app').innerHTML=h;
   $('#sDur').onchange=function(){st.dur=+this.value;saveSettings()};
   $('#sAcc').onchange=function(){st.maxAcc=+this.value;saveSettings()};
   $('#sUnit').onchange=function(){st.unit=this.value;saveSettings()};
   $('#sLU').onchange=function(){st.lunit=this.value;saveSettings();renderMore()};
-  $('#bExp').onclick=function(){var pl=clone(S.plots);pl.forEach(function(p){allRings(p).forEach(function(r){r.forEach(function(c){delete c.ph})})});share('Land Measure backup',JSON.stringify({app:'land-measure',v:2,exported:Date.now(),plots:pl},null,1),'land-measure-backup.json','application/json')};
+  $('#bExp').onclick=function(){backupNow(function(){toast('Backup saved. Keep that file safe');renderMore()})};
   $('#bGeoAll').onclick=function(){if(!S.plots.length){toast('No plots yet');return}share('Land plots GeoJSON',geojson(S.plots),'land-plots.geojson','application/geo+json')};
   $('#bKmlAll').onclick=function(){if(!S.plots.length){toast('No plots yet');return}share('Land plots KML',kmlOf(S.plots),'land-plots.kml','application/vnd.google-earth.kml+xml')};
   $('#bImp').onclick=function(){
@@ -1980,6 +2007,7 @@ function renderMore(){
 }
 
 render();
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(function(){})}catch(e){}
 if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){try{navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}}
 // auto-start GPS if the user has used the app before (permission already granted)
 try{if(navigator.permissions&&navigator.permissions.query){navigator.permissions.query({name:'geolocation'}).then(function(r){if(r.state==='granted')startGPS()}).catch(function(){})}}catch(e){}
