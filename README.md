@@ -12,7 +12,7 @@ Personal iPhone web app (PWA) to measure land plot areas with the phone only.
 - **Split a plot** (Map tab > Tools, or Split on a saved plot): ready-made ideas shown as pictures (2 equal parts, 3 strips, from a corner, keep a quarter, 3 m road). Live controls for side/corner, equal parts, ratio, cents, road strip. Parts are drawn in colour on the map and can be saved as separate plots.
 - **Exclude areas** (house, pond): taken out of the area, net area shown.
 - **Record area**: type the deed / Ente Bhoomi area and see the difference in % against the measuring error.
-- **Tape lengths**: type sides (and diagonals) in metres or feet; the plot is drawn, area and error are worked out, then placed on the map (move / turn it onto the land).
+- **Tape lengths**: type sides and crosses (tapes straight across the plot) in metres or feet; the plot is drawn, area and error are worked out, then placed on the map (move / turn it onto the land). The sheet says how many crosses are needed (corners − 3) and shows them on a picture. Tap a corner (or use the list) to take the crosses from that corner; "Suggest the best corner" picks, from the rough shape already on the map, the corner whose crosses stay inside the plot and avoid thin triangles.
 - **Magnifier** while dragging a point, per-point **notes and photos** (photos stay in the phone's IndexedDB, not in the backup).
 - Exports: plan PDF, plan picture, KML (with excluded areas and point notes), GeoJSON, summary text.
 - Units: cent, acre, sq m, sq ft, Ha-Ar-m2. Saved plots, backup.

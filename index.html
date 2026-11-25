@@ -316,21 +316,41 @@ function splitIdeas(P,H){
   return out;
 }
 // polygon from tape lengths: sides[i] joins point i and i+1 (the last one closes to point 0); diags[k-2] = distance point 0 -> point k for k=2..n-2
-function tapeSolve(sides,diags){
-  var n=sides.length;if(n<3)return{ok:false,err:'Need at least 3 sides'};
+function tapeSolve(sides,diags,off){
+  var n=sides.length,L=function(k){return((k+(off||0))%n)+1};if(n<3)return{ok:false,err:'Need at least 3 sides'};
   if(sides.some(function(v){return!(v>0)}))return{ok:false,err:'Every side must be more than zero'};
-  var d=[0,sides[0]];for(var k=2;k<=n-2;k++){var dv=diags[k-2];if(!(dv>0))return{ok:false,err:'Enter the diagonal from point 1 to point '+(k+1),need:k};d[k]=dv}
+  var d=[0,sides[0]];for(var k=2;k<=n-2;k++){var dv=diags[k-2];if(!(dv>0))return{ok:false,err:'Enter the diagonal (cross) from point '+L(0)+' to point '+L(k),need:k};d[k]=dv}
   d[n-1]=sides[n-1];
   var P=[{x:0,y:0},{x:d[1],y:0}],ang=0;
   for(var m=2;m<=n-1;m++){
     var s=sides[m-1],a=d[m-1],b=d[m],c=(a*a+b*b-s*s)/(2*a*b);
-    if(c>1+1e-9||c<-1-1e-9)return{ok:false,err:'These lengths do not close up around point '+(m+1)+'. Check the side from point '+m+' to '+(m+1)+(m>=2&&m<=n-2?' and the diagonal to point '+(m+1):''),bad:m};
+    if(c>1+1e-9||c<-1-1e-9)return{ok:false,err:'These lengths do not close up around point '+L(m)+'. Check the side from point '+L(m-1)+' to '+L(m)+(m>=2&&m<=n-2?' and the cross to point '+L(m):''),bad:m};
     ang+=Math.acos(Math.max(-1,Math.min(1,c)));
     P.push({x:b*Math.cos(ang),y:b*Math.sin(ang)});
   }
   var per=0;for(var i=0;i<n;i++){var p=P[i],q=P[(i+1)%n];per+=Math.hypot(q.x-p.x,q.y-p.y)}
   var warn=null;if(ang>2*Math.PI-1e-6)warn='The shape wraps all the way round';else if(selfCross(P))warn='These lengths make a shape whose sides cross. Check the order of the points.';
   return{ok:true,P:P,area:Math.abs(polyArea(P)),per:per,warn:warn};
+}
+// crosses: n corners need n-3 diagonals. They fan out from one hub corner h to the corners h+2 ... h+n-2.
+function tapeCross(n,h){var o=[];for(var k=2;k<=n-2;k++)o.push([h,(h+k)%n]);return o}
+function tapeRot(a,h){var n=a.length;return a.map(function(_,i){return a[(i+h)%n]})}
+function tapeOrient(P){var a=P[0],b=P[1],th=Math.atan2(b.y-a.y,b.x-a.x),c=Math.cos(-th),s=Math.sin(-th);return P.map(function(p){var x=p.x-a.x,y=p.y-a.y;return{x:x*c-y*s,y:x*s+y*c}})}
+function triMin(a,b,c){var A=Math.hypot(b.x-c.x,b.y-c.y),B=Math.hypot(a.x-c.x,a.y-c.y),C=Math.hypot(a.x-b.x,a.y-b.y);if(A<1e-9||B<1e-9||C<1e-9)return 0;
+  var ang=function(x,y,z){return Math.acos(Math.max(-1,Math.min(1,(y*y+z*z-x*x)/(2*y*z))))/DEG};return Math.min(ang(A,B,C),ang(B,A,C),ang(C,A,B))}
+function crossInside(P,i,j){var n=P.length,a=P[i],b=P[j];if(!pointInPoly({x:(a.x+b.x)/2,y:(a.y+b.y)/2},P))return false;
+  for(var e=0;e<n;e++){var e2=(e+1)%n;if(e===i||e===j||e2===i||e2===j)continue;if(segInt(a,b,P[e],P[e2]))return false}return true}
+// which corner is the best hub, judged on a rough shape P: crosses inside the plot, no thin triangles, short crosses
+function tapeBestHub(P){
+  var n=P.length,best=null;if(n<4)return{hub:0,ok:true,minAng:0,tot:0};
+  for(var h=0;h<n;h++){
+    var ok=true,tot=0,ma=180;
+    tapeCross(n,h).forEach(function(c){if(!crossInside(P,c[0],c[1]))ok=false;tot+=Math.hypot(P[c[1]].x-P[c[0]].x,P[c[1]].y-P[c[0]].y)});
+    for(var k=1;k<=n-2;k++)ma=Math.min(ma,triMin(P[h],P[(h+k)%n],P[(h+k+1)%n]));
+    var cand={hub:h,ok:ok,minAng:ma,tot:tot};
+    if(!best||(cand.ok&&!best.ok)||(cand.ok===best.ok&&(cand.minAng>best.minAng+0.5||(Math.abs(cand.minAng-best.minAng)<=0.5&&cand.tot<best.tot-1e-6))))best=cand;
+  }
+  return best;
 }
 // typical error of a taped area: every length is off by about 3 cm + 0.2 %
 function tapeSigma(sides,diags){
@@ -1489,34 +1509,64 @@ function recSheet(target,after){
 }
 
 // ---------- tape lengths ----------
-var TP={n:4,u:'m',sides:[],diags:[],brg:0,loaded:false};
+var TP={n:4,u:'m',sides:[],dm:{},hub:0,brg:0,loaded:false,hint:''};
+function tkey(p){return Math.min(p[0],p[1])+'-'+Math.max(p[0],p[1])}
 function tapeVals(){
-  var f=TP.u==='ft'?0.3048:1,pv=function(t){var v=parseFloat(String(t||'').replace(',','.'));return v>0?v*f:NaN},n=TP.n,sides=[],diags=[];
+  var f=TP.u==='ft'?0.3048:1,pv=function(t){var v=parseFloat(String(t||'').replace(',','.'));return v>0?v*f:NaN},n=TP.n,h=TP.hub%n,sides=[],diags=[];
   for(var i=0;i<n;i++)sides.push(pv(TP.sides[i]));
-  for(var k=2;k<=n-2;k++)diags.push(pv(TP.diags[k-2]));
-  return{sides:sides,diags:diags};
+  tapeCross(n,h).forEach(function(p){diags.push(pv(TP.dm[tkey(p)]))});
+  return{sides:sides,diags:diags,hub:h};
 }
 function tapeCalc(){
-  var v=tapeVals(),miss=v.sides.some(function(x){return!(x>0)});
+  var v=tapeVals(),n=TP.n,h=v.hub,miss=v.sides.some(function(x){return!(x>0)});
   if(miss)return{ok:false,err:'Type all '+TP.n+' side lengths'};
-  var r=tapeSolve(v.sides,v.diags);if(!r.ok)return r;
-  r.sig=tapeSigma(v.sides,v.diags);r.sidesM=v.sides;r.diagsM=v.diags;return r;
+  var sr=tapeRot(v.sides,h),r=tapeSolve(sr,v.diags,h);if(!r.ok)return r;
+  r.sig=tapeSigma(sr,v.diags);var P=new Array(n);r.P.forEach(function(p,k){P[(h+k)%n]=p});r.P=tapeOrient(P);r.sidesM=v.sides;r.diagsM=v.diags;return r;
+}
+// a rough shape to judge the crosses on: the corners already on the map, when there are as many as the tape plot has
+function tapeRef(){var C=S.draft.corners;if(!C||C.length!==TP.n||TP.n<4)return null;return toXY(C,C[0].lat,C[0].lon)}
+function tapeAutoHub(){
+  var ref=tapeRef();if(!ref||TP.n<4)return;
+  var typed=Object.keys(TP.dm).some(function(k){return String(TP.dm[k]||'').trim()!==''});if(typed)return;
+  var b=tapeBestHub(ref);TP.hub=b.hub;
+  TP.hint='Corner '+(b.hub+1)+' picked from the shape on the map: '+(b.ok?'every cross stays inside the plot and no triangle is thin.':'the boundary bends inward, so a cross may pass outside the plot. Tape it carefully.');
+}
+function hubOpts(n,h){var o='';for(var x=0;x<n;x++)o+='<option value="'+x+'"'+(x===h?' selected':'')+'>'+(x+1)+'</option>';return o}
+function tapeDiagram(n,hub,ref){
+  var W=300,H=170,pad=24,P=[];
+  if(ref&&ref.length===n){var xs=ref.map(function(p){return p.x}),ys=ref.map(function(p){return-p.y}),x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),sc=Math.min((W-2*pad)/((x1-x0)||1),(H-2*pad)/((y1-y0)||1));
+    P=ref.map(function(p,i){return{x:pad+(xs[i]-x0)*sc+((W-2*pad)-(x1-x0)*sc)/2,y:pad+(ys[i]-y0)*sc+((H-2*pad)-(y1-y0)*sc)/2}})}
+  else for(var i=0;i<n;i++){var a=-Math.PI/2+2*Math.PI*i/n;P.push({x:W/2+105*Math.cos(a),y:H/2+60*Math.sin(a)})}
+  var g='<svg id="tDia" viewBox="0 0 '+W+' '+H+'" style="width:100%;max-height:190px;margin-top:6px;background:var(--soft);border-radius:12px" role="img" aria-label="Plot with crosses from corner '+(hub+1)+'">';
+  g+='<polygon points="'+P.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ')+'" fill="none" stroke="var(--mut)" stroke-width="2"/>';
+  tapeCross(n,hub).forEach(function(c){var a=P[c[0]],b=P[c[1]];g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="7 5"/>'});
+  P.forEach(function(p,i){var on=i===hub;g+='<g data-h="'+i+'" style="cursor:pointer"><circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="14" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="var(--acc)" stroke-width="2"/><text x="'+p.x.toFixed(1)+'" y="'+(p.y+4.5).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="700" fill="'+(on?'var(--accInk)':'var(--ink)')+'">'+(i+1)+'</text></g>'});
+  return g+'</svg>';
 }
 function tapeSheet(){
-  if(!TP.loaded){TP.loaded=true;TP.u=inFt()?'ft':'m';var t=S.draft.tape;if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.diags=(t.diags||[]).map(String);TP.brg=t.brg||0}}
+  if(!TP.loaded){TP.loaded=true;TP.u=inFt()?'ft':'m';var t=S.draft.tape;
+    if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.brg=t.brg||0;TP.hub=t.hub||0;TP.dm={};tapeCross(TP.n,TP.hub).forEach(function(p,i){if(t.diags&&t.diags[i]!=null&&String(t.diags[i])!=='')TP.dm[tkey(p)]=String(t.diags[i])})}
+    else tapeAutoHub()}
   var u=S.settings.unit,drawIn=function(){
-    var n=TP.n,h='<h3>Tape lengths</h3><div class="mut small">Measure each side of the plot with a tape, going round in order. For a shape with 4 or more corners also measure the diagonals from point 1, so the shape is fixed.</div>';
-    h+='<div class="row" style="align-items:center"><div style="flex:1.2">Corners</div><select id="tN">'+[3,4,5,6,7,8].map(function(x){return'<option'+(x===n?' selected':'')+'>'+x+'</option>'}).join('')+'</select><select id="tU"><option value="m"'+(TP.u==='m'?' selected':'')+'>metres</option><option value="ft"'+(TP.u==='ft'?' selected':'')+'>feet</option></select></div>';
-    h+='<div class="mut small" style="margin-top:10px">Sides</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-    for(var i=0;i<n;i++)h+='<div><label style="margin:0 0 3px">'+(i+1)+' &rarr; '+((i+1)%n+1)+'</label><input data-s="'+i+'" inputmode="decimal" value="'+esc(TP.sides[i]||'')+'" autocomplete="off"></div>';
-    h+='</div>';
-    if(n>=4){h+='<div class="mut small" style="margin-top:10px">Diagonals from point 1</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-      for(var k=2;k<=n-2;k++)h+='<div><label style="margin:0 0 3px">1 &rarr; '+(k+1)+'</label><input data-d="'+(k-2)+'" inputmode="decimal" value="'+esc(TP.diags[k-2]||'')+'" autocomplete="off"></div>';
-      h+='</div>'}
-    h+='<div id="tRes"></div>';
-    h+='<label>Direction of side 1 (0 = north, 90 = east)</label><input id="tB" inputmode="decimal" value="'+TP.brg+'" autocomplete="off">';
-    h+='<div class="row"><button class="pri" id="tPlace">Put on the map</button><button id="tX">Close</button></div>';
-    sheet(h);
+    var n=TP.n,h=TP.hub%n,cr=tapeCross(n,h),ref=tapeRef(),hh='<h3>Tape lengths</h3><div class="mut small">Measure each side of the plot with a tape, going round in order. A shape with 4 or more corners also needs <b>crosses</b>: tapes pulled straight across the plot from one corner to another, so the shape is fixed.</div>';
+    hh+='<div class="row" style="align-items:center"><div style="flex:1.2">Corners</div><select id="tN">'+[3,4,5,6,7,8].map(function(x){return'<option'+(x===n?' selected':'')+'>'+x+'</option>'}).join('')+'</select><select id="tU"><option value="m"'+(TP.u==='m'?' selected':'')+'>metres</option><option value="ft"'+(TP.u==='ft'?' selected':'')+'>feet</option></select></div>';
+    hh+='<div class="mut small" style="margin-top:10px">Sides</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+    for(var i=0;i<n;i++)hh+='<div><label style="margin:0 0 3px">'+(i+1)+' &rarr; '+((i+1)%n+1)+'</label><input data-s="'+i+'" inputmode="decimal" value="'+esc(TP.sides[i]||'')+'" autocomplete="off"></div>';
+    hh+='</div>';
+    if(n>=4){
+      hh+='<div style="margin-top:12px"><b>Crosses</b> <span class="mut small">only '+cr.length+' needed for '+n+' corners</span></div>'
+        +'<div class="row" style="align-items:center;margin-top:6px"><div style="flex:1.2">Crosses from corner</div><select id="tHub">'+hubOpts(n,h)+'</select></div>'
+        +tapeDiagram(n,h,ref)
+        +'<div class="mut small" style="margin-top:4px">Tap a corner on the picture to take the crosses from that corner. Choose a corner you can see or walk straight from to all the other corners. A cross should not pass through a house or a pond.</div>'
+        +'<div class="row" style="margin-top:6px"><button id="tBest">Suggest the best corner</button></div>'
+        +(TP.hint?'<div class="mut small" id="tHint" style="margin-top:4px">'+esc(TP.hint)+'</div>':'<div class="mut small" id="tHint"></div>')
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';
+      cr.forEach(function(c){hh+='<div><label style="margin:0 0 3px">'+(c[0]+1)+' &rarr; '+(c[1]+1)+'</label><input data-d="'+tkey(c)+'" inputmode="decimal" value="'+esc(TP.dm[tkey(c)]||'')+'" autocomplete="off"></div>'});
+      hh+='</div>'}
+    hh+='<div id="tRes"></div>';
+    hh+='<label>Direction of side 1 (0 = north, 90 = east)</label><input id="tB" inputmode="decimal" value="'+TP.brg+'" autocomplete="off">';
+    hh+='<div class="row"><button class="pri" id="tPlace">Put on the map</button><button id="tX">Close</button></div>';
+    sheet(hh);
     var upd=function(){
       var r=tapeCalc(),el=$('#tRes');
       if(!r.ok){el.innerHTML='<div class="mut small" style="margin-top:10px">'+esc(r.err||'')+'</div>';$('#tPlace').disabled=true;return}
@@ -1524,9 +1574,16 @@ function tapeSheet(){
       $('#tPlace').disabled=!!r.warn&&/cross|wraps/.test(r.warn);
     };
     $('#sheet').querySelectorAll('input[data-s]').forEach(function(x){x.oninput=function(){TP.sides[+x.dataset.s]=x.value;upd()}});
-    $('#sheet').querySelectorAll('input[data-d]').forEach(function(x){x.oninput=function(){TP.diags[+x.dataset.d]=x.value;upd()}});
-    $('#tN').onchange=function(){TP.n=+this.value;drawIn()};
+    $('#sheet').querySelectorAll('input[data-d]').forEach(function(x){x.oninput=function(){TP.dm[x.dataset.d]=x.value;upd()}});
+    $('#tN').onchange=function(){TP.n=+this.value;TP.hub=0;TP.hint='';tapeAutoHub();drawIn()};
     $('#tU').onchange=function(){TP.u=this.value;upd()};
+    if($('#tHub')){
+      $('#tHub').onchange=function(){TP.hub=+this.value;TP.hint='';drawIn()};
+      $('#sheet').querySelectorAll('#tDia [data-h]').forEach(function(g){g.onclick=function(){TP.hub=+g.dataset.h;TP.hint='';drawIn()}});
+      $('#tBest').onclick=function(){
+        var rf=tapeRef();if(!rf){TP.hint='Mark a rough shape with '+TP.n+' corners on the map first. Then I can pick the best corner for the crosses.';$('#tHint').textContent=TP.hint;return}
+        var b=tapeBestHub(rf);TP.hub=b.hub;TP.hint='Corner '+(b.hub+1)+' is best: '+(b.ok?'every cross stays inside the plot and no triangle is thin.':'the boundary bends inward, so a cross may pass outside the plot. Tape it carefully.');drawIn()};
+    }
     $('#tB').oninput=function(){TP.brg=parseFloat(this.value.replace(',','.'))||0};
     $('#tX').onclick=closeSheet;
     $('#tPlace').onclick=tapePlace;
@@ -1539,7 +1596,7 @@ function tapePlace(){
   var org=(S.tab==='map'||!(S.gps.lat!=null&&Date.now()-S.gps.rx<30000))?{lat:MS.lat,lon:MS.lon}:{lat:S.gps.lat,lon:S.gps.lon};
   var go=function(){
     var d=S.draft;d.corners=tapeCorners(r.P,org.lat,org.lon,TP.brg);d.holes=[];d.mode='corners';
-    d.tape={sides:TP.sides.slice(0,TP.n),diags:TP.diags.slice(0,Math.max(0,TP.n-3)),u:TP.u,brg:TP.brg};
+    d.tape={sides:TP.sides.slice(0,TP.n),diags:tapeCross(TP.n,TP.hub%TP.n).map(function(c){return TP.dm[tkey(c)]||''}),hub:TP.hub%TP.n,u:TP.u,brg:TP.brg};
     saveDraft();closeSheet();M.ring=-1;M.split=null;M.view=null;M.refit=true;S.tab='map';render();gcPhotos();
     toast('Plot placed in the middle of the map. Use Tools → Move or turn the plot to put it on the land');
   };
@@ -1862,7 +1919,7 @@ function fileBase(p){return(p.name.replace(/[^\w\-]+/g,'_')||'plot')}
 function renderDetail(p){
   var an=anOf(p,p.mode||'corners'),u=S.settings.unit;
   var h='<button id="bBack" style="margin-bottom:10px">&larr; All plots</button><div class="card"><div style="font-size:20px;font-weight:700">'+esc(p.name)+'</div><div class="mut small">'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'<div style="margin-top:10px">'+resultHTML(an,p.mode,false,p)+'</div></div>';
-  if(p.tape&&p.tape.sides)h+='<div class="card"><h2>Tape lengths</h2><div class="small">Sides: '+p.tape.sides.map(function(v,i){return(i+1)+'→'+((i+1)%p.tape.sides.length+1)+' <b>'+esc(v)+'</b>'}).join(' · ')+(p.tape.diags&&p.tape.diags.length?'<br>Diagonals: '+p.tape.diags.map(function(v,i){return'1→'+(i+3)+' <b>'+esc(v)+'</b>'}).join(' · '):'')+' ('+(p.tape.u==='ft'?'feet':'metres')+')</div></div>';
+  if(p.tape&&p.tape.sides)h+='<div class="card"><h2>Tape lengths</h2><div class="small">Sides: '+p.tape.sides.map(function(v,i){return(i+1)+'→'+((i+1)%p.tape.sides.length+1)+' <b>'+esc(v)+'</b>'}).join(' · ')+(p.tape.diags&&p.tape.diags.length?'<br>Crosses: '+tapeCross(p.tape.sides.length,(p.tape.hub||0)%p.tape.sides.length).map(function(c,i){return(c[0]+1)+'→'+(c[1]+1)+' <b>'+esc(p.tape.diags[i])+'</b>'}).join(' · '):'')+' ('+(p.tape.u==='ft'?'feet':'metres')+')</div></div>';
   h+='<div class="card"><h2>Corners</h2><table>'+p.corners.map(function(c,i){return'<tr><td>'+(i+1)+'</td><td style="font-weight:400;font-size:13px">'+c.lat.toFixed(6)+', '+c.lon.toFixed(6)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+(c.note?'<div style="font-weight:600;margin-top:2px">'+esc(c.note)+'</div>':'')+(c.ph&&c.ph.length?'<div class="thumbs" data-ph="'+i+'"></div>':'')+'</td></tr>'}).join('')+'</table></div>';
   if(an.H.length)h+='<div class="card"><h2>Excluded areas</h2><table>'+an.H.map(function(H,i){return'<tr><td>Area '+(i+1)+'</td><td>'+fa(shoelace(H),u)+' '+UNIT[u].l+'</td></tr>'}).join('')+'</table></div>';
   h+='<button class="pri" id="bMap" style="width:100%;margin-bottom:8px">&#128752;&#65039; View on satellite map</button>';
@@ -1897,7 +1954,7 @@ function renderMore(){
   h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. Take a backup now and then.</div><div class="row" style="margin-top:10px"><button id="bExp" class="pri">Export all</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
   h+='<div class="card"><h2>How accurate is this?</h2><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></div>';
   h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></div>';
-  h+='<div class="card"><h2>More tools (Map tab &rarr; Tools)</h2><ul class="tips small"><li><b>Split:</b> divide a plot into equal parts, by ratio, by cents, or with a road strip. Ideas are shown as small pictures. Save the parts as separate plots.</li><li><b>Exclude an area:</b> mark a house or pond. Its area is taken out and the net area is shown.</li><li><b>Record area:</b> type the area from the deed or Ente Bhoomi to see the difference in %.</li><li><b>Tape lengths:</b> type the side lengths (and diagonals) and the app draws the plot and works out the area. A tape is far more exact than GPS for small plots.</li><li><b>Magnifier:</b> when you drag a point, a round magnifier shows the spot above your finger.</li><li><b>Point notes and photos:</b> tap a point to add a note or a photo.</li><li>On a saved plot you can make a <b>plan PDF</b>, a picture, or a <b>KML</b> file for Google Earth.</li></ul></div>';
+  h+='<div class="card"><h2>More tools (Map tab &rarr; Tools)</h2><ul class="tips small"><li><b>Split:</b> divide a plot into equal parts, by ratio, by cents, or with a road strip. Ideas are shown as small pictures. Save the parts as separate plots.</li><li><b>Exclude an area:</b> mark a house or pond. Its area is taken out and the net area is shown.</li><li><b>Record area:</b> type the area from the deed or Ente Bhoomi to see the difference in %.</li><li><b>Tape lengths:</b> type the side lengths and the crosses (tapes straight across the plot) and the app draws the plot and works out the area. It tells you the fewest crosses needed (corners &minus; 3). Tap a corner to take the crosses from it, or let the app suggest the best corner. A tape is far more exact than GPS for small plots.</li><li><b>Magnifier:</b> when you drag a point, a round magnifier shows the spot above your finger.</li><li><b>Point notes and photos:</b> tap a point to add a note or a photo.</li><li>On a saved plot you can make a <b>plan PDF</b>, a picture, or a <b>KML</b> file for Google Earth.</li></ul></div>';
   h+='<div class="card"><h2>Tips for best results</h2><ul class="tips small"><li>Stand in the open, away from trees, walls and vehicles.</li><li>Wait until the GPS chip at the top shows green or amber before you capture.</li><li>Take all corners in one session, within about 15 minutes. Common GPS errors then cancel out in the area.</li><li>Take corners in order around the plot (clockwise or anticlockwise).</li><li>Keep the phone steady and the screen on. The app asks the phone to stay awake.</li><li>Measure again on another day or time of day and compare. If the two areas differ, trust neither fully.</li></ul></div>';
   h+='<div class="card"><h2>Install on iPhone</h2><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></div>';
   $('#app').innerHTML=h;
