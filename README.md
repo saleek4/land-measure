@@ -3,7 +3,7 @@
 Personal iPhone web app (PWA) to measure land plot areas with the phone only.
 
 - **GPS corners / walk boundary**: averages GPS readings per corner, skips readings while the phone moves, estimates slope from GPS height.
-- **Fit a corner to an area** (Tools): type the area you want (for example from the deed) and the app shows how far along a boundary line one corner must stand so the plot comes to exactly that area. Undo puts the corner back.
+- **Fit to a wanted area** (Tools): type the area you want (say 94 cent). The app adds a new point on the last, unclosed side (pushed out or in), or moves one corner along a boundary line, so the plot comes to exactly that area. Undo puts it back.
 - **Freehand draw**: on the Map tab tap Draw and sketch the outline of the plot with one finger. It becomes a rough polygon with its area straight away (two fingers move or zoom the map; Undo removes the whole drawing).
 - **Units**: area in cent, acre, sq m or sq ft; lengths in metres or feet (More tab, or Map options). Tap the big area number on a result to cycle the area unit.
 - **Live map on the Measure tab**: a small satellite map shows where you stand (blue dot), the corners you have marked with GPS (green) and tells you whether you are inside the marked plot. The Map tab also opens on your own location.

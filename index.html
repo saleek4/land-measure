@@ -774,7 +774,7 @@ function mapDraw(){
     ctx.setLineDash([6,6]);ctx.beginPath();ctx.moveTo(dq[dq.length-1].x,dq[dq.length-1].y);ctx.lineTo(dq[0].x,dq[0].y);ctx.lineWidth=2;ctx.strokeStyle='rgba(255,210,63,.85)';ctx.stroke();ctx.restore();
   }
   if(M.fit){
-    var fp=toScr(M.fit.lat,M.fit.lon),fc=act()[M.fit.i];
+    var fp=toScr(M.fit.lat,M.fit.lon),fc=act()[M.fit.i]||M.fit.from;
     if(fc){var fo=toScr(fc.lat,fc.lon);ctx.save();ctx.setLineDash([7,6]);ctx.lineWidth=3;ctx.strokeStyle='#ff9a3c';ctx.beginPath();ctx.moveTo(fo.x,fo.y);ctx.lineTo(fp.x,fp.y);ctx.stroke();ctx.setLineDash([]);
       ctx.beginPath();ctx.arc(fp.x,fp.y,12,0,7);ctx.fillStyle='rgba(255,154,60,.35)';ctx.fill();ctx.lineWidth=3;ctx.strokeStyle='#ff9a3c';ctx.stroke();
       ctx.font='700 12px -apple-system,Helvetica,Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';ctx.strokeStyle='rgba(0,0,0,.7)';ctx.lineWidth=3;ctx.strokeText(String(M.fit.i+1),fp.x,fp.y+.5);ctx.fillText(String(M.fit.i+1),fp.x,fp.y+.5);ctx.restore()}
@@ -980,7 +980,7 @@ function gcPhotos(){
 }
 function selectVertex(i){
   var A=act(),c=A[i];if(!c)return;
-  var d=c.src==='tape'?'From tape lengths.':c.src==='cut'?(c.fit?'Corner set so the area matches the wanted area.':'Corner made by a split cut.'):placed(c)?'Placed on the satellite map, about ±'+fl(c.acc,1)+'.':'GPS point, ±'+fl(c.acc,1)+' from '+c.n+' readings.';
+  var d=c.src==='tape'?'From tape lengths.':c.src==='cut'?(c.fit?'Point set so the area matches the wanted area.':'Corner made by a split cut.'):placed(c)?'Placed on the satellite map, about ±'+fl(c.acc,1)+'.':'GPS point, ±'+fl(c.acc,1)+' from '+c.n+' readings.';
   sheet('<h3>'+(M.ring>=0?'Excluded area · ':'')+'Point '+(i+1)+'</h3><div class="mut small">'+d+' Drag the point to move it.</div><label>Note (boundary stone, well, tree …)</label><input id="vN" value="'+esc(c.note||'')+'" maxlength="160" autocomplete="off"><div class="thumbs" id="vTh"></div><div class="row"><button id="vPh">&#128247; Add photo</button></div><input type="file" id="vF" accept="image/*" style="display:none"><div class="row"><button class="pri" id="vOk">Done</button><button class="danger" id="vDel">Delete point</button></div>');
   var th=function(){thumbsInto($('#vTh'),c.ph,function(id){c.ph=c.ph.filter(function(x){return x!==id});if(!c.ph.length)delete c.ph;saveDraft();th();scheduleDraw();gcPhotos()})};th();
   $('#vN').oninput=function(){var v=this.value.trim();if(v)c.note=v;else delete c.note;saveDraft();scheduleDraw()};
@@ -1186,7 +1186,7 @@ function toolsSheet(){
     +'<button id="tHole"'+(ok?'':' disabled')+'>&#10134; Exclude an area<small>Mark a house, pond or road inside the plot and take it out of the area.</small></button>'
     +(hs.length?'<button id="tHoles">Excluded areas ('+hs.length+')<small>Edit or remove</small></button>':'')
     +'<button id="tRec"'+(ok?'':' disabled')+'>&#128203; Record area<small>'+(o.rec?'Record: '+fa(o.rec.a,o.rec.u)+' '+UNIT[o.rec.u].l+'. Tap to change.':'Type the area from the deed or Ente Bhoomi and compare it with this measurement.')+'</small></button>'
-    +'<button id="tFit"'+(ok?'':' disabled')+'>&#127919; Fit a corner to an area<small>Type the area you want. The app shows where one corner must stand so the plot comes to exactly that.</small></button>'
+    +'<button id="tFit"'+(ok?'':' disabled')+'>&#127919; Fit to a wanted area<small>Type the area you want (say 94 cent). The app adds or moves one point so the plot comes to exactly that.</small></button>'
     +'<button id="tTape">&#128208; Enter tape lengths<small>Type the side lengths measured with a tape. The plot is drawn from them.</small></button>'
     +'<button id="tMove"'+(ok?'':' disabled')+'>&#10021; Move or turn the plot<small>For a plot drawn from tape lengths: slide it onto the right place and turn it.</small></button>'
     +'</div><div class="row"><button id="tClose">Close</button></div>');
@@ -1220,38 +1220,64 @@ function fitCalc(o,i,dir,Tm2){
   var an1=analyze(test,'corners',holesOf(o));
   return{t:t,L:L,newL:newL,lat:q.lat,lon:q.lon,ri:ri,now:an0.net,after:an1?an1.net:null,cross:!!(an1&&an1.cross)};
 }
+// new point on the closing side (between the last point and point 1), pushed out or in so the area comes to the wanted amount
+function fitAddCalc(o,f,Tm2){
+  var C=o.corners,n=C.length,P=toXY(C,C[0].lat,C[0].lon),a=P[n-1],b=P[0],dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy);
+  if(L<0.5)return{err:'The last point and point 1 are on the same spot.'};
+  var an0=anOf(o,'corners'),G=Tm2+(an0.holeArea||0),mx=a.x+dx*f,my=a.y+dy*f,S0=polyArea(P),sg=S0>=0?1:-1,nx=sg*dy/L,ny=-sg*dx/L;
+  var Sg=function(h){return polyArea(P.concat([{x:mx+nx*h,y:my+ny*h}]))},s0=Sg(0),k=Sg(1)-s0;
+  if(Math.abs(k)<1e-6)return{err:'This position cannot change the area.'};
+  var h=(sg*G-s0)/k,q=fromXY(mx+nx*h,my+ny*h,C[0].lat,C[0].lon),mid=fromXY(mx,my,C[0].lat,C[0].lon);
+  var test=clone(C);test.push({lat:q.lat,lon:q.lon,acc:3,n:1,total:1,src:'cut'});
+  var an1=analyze(test,'corners',holesOf(o));
+  return{add:true,h:h,L:L,lat:q.lat,lon:q.lon,from:mid,now:an0.net,after:an1?an1.net:null,cross:!!(an1&&an1.cross)};
+}
 function fitSheet(o,after){
-  var C=o.corners,n=C.length,u=(o.rec&&o.rec.u)||S.settings.unit,v=o.rec?UNIT[u].f(o.rec.a):'',res=null,st={i:n-1,dir:'prev'};
+  var C=o.corners,n=C.length,u=(o.rec&&o.rec.u)||S.settings.unit,v=o.rec?UNIT[u].f(o.rec.a):'',res=null,st={mode:'add',i:n-1,dir:'prev',f:0.5};
   var opts=function(){var h='';for(var k=0;k<n;k++)h+='<option value="'+k+'"'+(k===st.i?' selected':'')+'>Point '+(k+1)+'</option>';return h};
-  sheet('<h3>Fit a corner to an area</h3><div class="mut small">Mark the plot, then type the area you want, for example from the deed. The app shows where one corner must stand, along a boundary line, so the area comes to exactly that.</div>'
-    +'<label>Wanted area</label><div class="row"><input id="fiV" inputmode="decimal" placeholder="e.g. 50" value="'+(v===''?'':(+v).toFixed(4).replace(/\.?0+$/,''))+'" autocomplete="off"><select id="fiU">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(k===u?' selected':'')+'>'+UNIT[k].l+'</option>'}).join('')+'</select></div>'
-    +'<label>Corner to place</label><select id="fiI">'+opts()+'</select>'
-    +'<label>Slide it along</label><select id="fiD"><option value="prev">the side before it</option><option value="next">the side after it</option></select>'
+  sheet('<h3>Fit to a wanted area</h3><div class="mut small">Mark the plot, then type the area you want, for example from the deed. The app finds where one point must stand so the area comes to exactly that.</div>'
+    +'<label>Wanted area</label><div class="row"><input id="fiV" inputmode="decimal" placeholder="e.g. 94" value="'+(v===''?'':(+v).toFixed(4).replace(/\.?0+$/,''))+'" autocomplete="off"><select id="fiU">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(k===u?' selected':'')+'>'+UNIT[k].l+'</option>'}).join('')+'</select></div>'
+    +'<label>What should the app do?</label><select id="fiM"><option value="add">Add a new point on the last side (between point '+n+' and point 1)</option><option value="move">Move one of my corners along a side</option></select>'
+    +'<div id="fiAdd"><label>Where along the last side</label><select id="fiF"><option value="0.25">Near point '+n+' (25%)</option><option value="0.5" selected>In the middle (50%)</option><option value="0.75">Near point 1 (75%)</option></select></div>'
+    +'<div id="fiMove" style="display:none"><label>Corner to move</label><select id="fiI">'+opts()+'</select><label>Slide it along</label><select id="fiD"><option value="prev">the side before it</option><option value="next">the side after it</option></select></div>'
     +'<div id="fiR" class="mcard" style="margin-top:10px"></div>'
-    +'<div class="row"><button class="pri" id="fiOk" disabled>Move the corner</button><button id="fiNo">Close</button></div>');
+    +'<div class="row"><button class="pri" id="fiOk" disabled>Set the point</button><button id="fiNo">Close</button></div>');
   var q=function(x){return $(x)};
   var show=function(){
     var x=parseFloat(q('#fiV').value.replace(',','.')),un=q('#fiU').value,el=q('#fiR'),b=q('#fiOk');
-    st.i=+q('#fiI').value;st.dir=q('#fiD').value;res=null;b.disabled=true;M.fit=null;
-    if(!(x>0)){el.innerHTML='<span class="mut">Type the wanted area to see where the corner goes.</span>';scheduleDraw();return}
-    var r=fitCalc(o,st.i,st.dir,toSqm(x,un));
+    st.mode=q('#fiM').value;st.i=+q('#fiI').value;st.dir=q('#fiD').value;st.f=+q('#fiF').value;res=null;b.disabled=true;M.fit=null;
+    q('#fiAdd').style.display=st.mode==='add'?'block':'none';q('#fiMove').style.display=st.mode==='move'?'block':'none';
+    if(!(x>0)){el.innerHTML='<span class="mut">Type the wanted area to see where the point goes.</span>';scheduleDraw();return}
+    var r=st.mode==='add'?fitAddCalc(o,st.f,toSqm(x,un)):fitCalc(o,st.i,st.dir,toSqm(x,un));
     if(r.err){el.innerHTML='<span style="color:var(--warn,#b3261e)">'+r.err+'</span>';scheduleDraw();return}
-    res=r;res.unit=un;b.disabled=false;M.fit={lat:r.lat,lon:r.lon,i:st.i};
-    var A=st.i+1,B=r.ri+1,far=r.t>=0;
-    el.innerHTML='<div><b>Point '+A+'</b>: '+(Math.abs(r.t)<0.05?'already in the right place.':'stand '+fl(Math.abs(r.t),1)+(far?' further out':' closer in')+' along the line from point '+B+' through point '+A+'.')+'</div>'
-      +'<div class="small">Side '+Math.min(A,B)+'&ndash;'+Math.max(A,B)+' becomes '+fl(r.newL,1)+' (now '+fl(r.L,1)+').</div>'
-      +'<div class="small">Area '+fa(r.now,un)+' &rarr; <b>'+fa(r.after==null?toSqm(x,un):r.after,un)+' '+UNIT[un].l+'</b></div>'
-      +(r.cross?'<div class="small" style="color:var(--warn,#b3261e)">The sides cross each other with this position. Try the other side or another corner.</div>':'');
+    res=r;b.disabled=!!r.cross;
+    var tail='<div class="small">Area '+fa(r.now,un)+' &rarr; <b>'+fa(r.after==null?toSqm(x,un):r.after,un)+' '+UNIT[un].l+'</b></div>'
+      +(r.cross?'<div class="small" style="color:var(--warn,#b3261e)">The sides cross each other with this position. Try another place or option.</div>':'');
+    if(r.add){
+      M.fit={lat:r.lat,lon:r.lon,i:n,from:r.from};
+      el.innerHTML='<div>New <b>point '+(n+1)+'</b> goes on the last side, <b>'+fl(Math.abs(r.h),1)+(r.h>=0?' outward':' inward')+'</b> from the '+Math.round(st.f*100)+'% mark of that side (point '+n+' to point 1, '+fl(r.L,1)+' long).</div>'+tail;
+      q('#fiOk').textContent='Add the point';
+    }else{
+      var A=st.i+1,B=r.ri+1,far=r.t>=0;M.fit={lat:r.lat,lon:r.lon,i:st.i};
+      el.innerHTML='<div><b>Point '+A+'</b>: '+(Math.abs(r.t)<0.05?'already in the right place.':'stand '+fl(Math.abs(r.t),1)+(far?' further out':' closer in')+' along the line from point '+B+' through point '+A+'.')+'</div>'
+        +'<div class="small">Side '+Math.min(A,B)+'&ndash;'+Math.max(A,B)+' becomes '+fl(r.newL,1)+' (now '+fl(r.L,1)+').</div>'+tail;
+      q('#fiOk').textContent='Move the corner';
+    }
     scheduleDraw();
   };
-  ['#fiV','#fiU','#fiI','#fiD'].forEach(function(id){q(id).oninput=show;q(id).onchange=show});
+  ['#fiV','#fiU','#fiI','#fiD','#fiM','#fiF'].forEach(function(id){q(id).oninput=show;q(id).onchange=show});
   q('#fiNo').onclick=function(){M.fit=null;closeSheet();scheduleDraw()};
   q('#fiOk').onclick=function(){
-    if(!res)return;var c=C[st.i];
-    M.undoFit={arr:C,i:st.i,prev:clone(c),lat:res.lat,lon:res.lon};
-    var accs=C.filter(function(_,k){return k!==st.i}).map(function(z){return z.acc||3}).sort(function(a,b){return a-b});
-    c.lat=res.lat;c.lon=res.lon;c.src='cut';c.fit=true;c.acc=accs.length?accs[Math.floor(accs.length/2)]:3;c.n=1;c.total=1;c.alt=null;c.altAcc=null;
-    M.fit=null;closeSheet();saveDraft();M.lastPanel='';mapBottom();scheduleDraw();toast('Point '+(st.i+1)+' moved. Undo puts it back.');
+    if(!res)return;
+    var accs=C.map(function(z){return z.acc||3}).sort(function(a,b){return a-b}),med=accs.length?accs[Math.floor(accs.length/2)]:3;
+    if(res.add){
+      C.push({lat:res.lat,lon:res.lon,acc:med,n:1,total:1,alt:null,altAcc:null,src:'cut',fit:true});M.undoFit=null;
+      M.fit=null;closeSheet();saveDraft();M.lastPanel='';mapBottom();scheduleDraw();toast('Point '+C.length+' added. Undo removes it.');
+    }else{
+      var c=C[st.i];M.undoFit={arr:C,i:st.i,prev:clone(c),lat:res.lat,lon:res.lon};
+      c.lat=res.lat;c.lon=res.lon;c.src='cut';c.fit=true;c.acc=med;c.n=1;c.total=1;c.alt=null;c.altAcc=null;
+      M.fit=null;closeSheet();saveDraft();M.lastPanel='';mapBottom();scheduleDraw();toast('Point '+(st.i+1)+' moved. Undo puts it back.');
+    }
     if(after)after();
   };
   show();
