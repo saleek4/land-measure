@@ -5,6 +5,18 @@ Personal iPhone web app (PWA) to measure land plot areas with the phone only.
 - **GPS corners / walk boundary**: averages GPS readings per corner, skips readings while the phone moves, estimates slope from GPS height.
 - **Fit to a wanted area** (Tools): type the area you want (say 94 cent). The app adds a new point on the last, unclosed side (pushed out or in), or moves one corner along a boundary line, so the plot comes to exactly that area. Undo puts it back.
 - **Edit sides and points** (Map tab > ✥ Edit, or Tools): tap a side to lengthen or shorten it and turn its direction with − / + buttons or typed values (the point at the chosen end moves, the rest stay joined). Tap a point to move it with N/W/E/S arrow buttons, set its distance to the neighbouring points, or set the corner angle (this point moves along an arc, or turn a neighbouring side). Add a point in the middle of a side, delete a point, undo each edit, show all corner angles on the map. Move plot has arrow buttons too.
+- **Account and cloud backup** (More tab, once the Firebase keys are set in `index.html`: `FB={apiKey,projectId}`): sign in with email and password; saved plots sync to the user's own Firestore (`users/{uid}/plots/{id}`, one document per plot with the plot as JSON, a change stamp and a deleted flag). The newest copy of each plot wins, deletions travel as small "deleted" notes, sync runs by itself after every save, on opening the app and when the phone comes back online. Photos stay on the phone. Plain REST calls, no Firebase library. Firebase setup: create a project, enable Authentication > Email/Password, create a Firestore database, and publish these rules:
+
+  ```
+  rules_version = '2';
+  service cloud.firestore {
+    match /databases/{db}/documents {
+      match /users/{uid}/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+  ```
 - **Backup reminder**: saved plots live only inside the app (deleting the Home Screen icon or clearing Safari data erases them). After a save, and on the Plots tab, the app asks for a backup when there is none from the last day / week or when plots were added since. "Back up now" opens the share sheet with a dated .json file (Files, iCloud Drive, WhatsApp). More tab > Import restores it. A Safari tab and the Home Screen icon keep separate plots, and the app says so.
 - **Freehand draw**: on the Map tab tap Draw and sketch the outline of the plot with one finger. It becomes a rough polygon with its area straight away (two fingers move or zoom the map; Undo removes the whole drawing).
 - **Units**: area in cent, acre, sq m or sq ft; lengths in metres or feet (More tab, or Map options). Tap the big area number on a result to cycle the area unit.

@@ -411,7 +411,7 @@ var S={
   cap:null,walk:null,wake:null
 };
 function saveDraft(){store(K.draft,S.draft)}
-function savePlots(){if(!store(K.plots,S.plots))toast('Could not save (storage full or blocked)')}
+function savePlots(){touchPlots();if(!store(K.plots,S.plots))toast('Could not save (storage full or blocked)');syncSoon()}
 function saveSettings(){store(K.settings,S.settings)}
 function blankDraft(mode){return{name:'',place:'',notes:'',mode:mode||'corners',corners:[],holes:[],rec:null,tape:null}}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
@@ -440,6 +440,133 @@ function saveBlob(title,blob,filename){
   var dl=function(){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},4000);toast('Saved '+filename)};
   try{if(window.File&&navigator.canShare){var f=new File([blob],filename,{type:blob.type});if(navigator.canShare({files:[f]})){navigator.share({files:[f],title:title}).catch(function(e){if(!e||e.name!=='AbortError')dl()});return}}}catch(e){}
   dl();
+}
+
+// ---------- account and cloud backup: email + password (Firebase), plain REST calls, no extra library ----------
+var FB=Object.assign({apiKey:'',projectId:''},window.LM_FB||{});
+var AK='lm.acct.v1',SKY='lm.sync.v1';
+var AC={u:load(AK,null),busy:null,err:'',t:null,note:''};
+var SY=Object.assign({h:{},dead:{},dirty:false,last:0,uid:''},load(SKY,{}));
+var NOTOUCH=false;
+function fbOn(){return!!(FB.apiKey&&FB.projectId)}
+function saveSY(){store(SKY,SY)}
+// what goes to the cloud for a plot: everything except photo links (photos stay on the phone) and the change stamp
+function plotSync(p){var q=clone(p);delete q.upd;allRings(q).forEach(function(r){r.forEach(function(c){delete c.ph})});return JSON.stringify(q)}
+function keepPh(np,old){var a=allRings(np),b=allRings(old);if(a.length!==b.length)return;a.forEach(function(r,i){if(r.length===b[i].length)r.forEach(function(c,k){if(b[i][k]&&b[i][k].ph)c.ph=b[i][k].ph})})}
+// every save of plots: note which plots changed (new change stamp) and which were deleted (tombstone)
+function touchPlots(){
+  if(NOTOUCH)return;var now=Date.now(),seen={},ch=false;
+  S.plots.forEach(function(p){seen[p.id]=1;var h=plotSync(p);if(SY.h[p.id]!==h){SY.h[p.id]=h;p.upd=now;delete SY.dead[p.id];ch=true}});
+  Object.keys(SY.h).forEach(function(id){if(!seen[id]){delete SY.h[id];SY.dead[id]=now;ch=true}});
+  if(ch){SY.dirty=true;saveSY()}
+}
+(function(){var ch=false;S.plots.forEach(function(p){if(p.upd==null){p.upd=p.ts||0;ch=true}if(SY.h[p.id]==null){SY.h[p.id]=plotSync(p);ch=true}});if(ch){store(K.plots,S.plots);saveSY()}})();
+function fbCode(e){return String(e&&e.code||e&&e.message||'')}
+function fbMsg(e){
+  var c=fbCode(e);
+  if(e instanceof TypeError||/Failed to fetch|NetworkError|Load failed/i.test(String(e&&e.message)))return'No internet. It will sync when you are online.';
+  if(/EMAIL_EXISTS/.test(c))return'This email already has an account. Tap Sign in instead.';
+  if(/INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/.test(c))return'Wrong email or password.';
+  if(/WEAK_PASSWORD/.test(c))return'The password needs at least 6 characters.';
+  if(/INVALID_EMAIL|MISSING_EMAIL/.test(c))return'Type a valid email address.';
+  if(/MISSING_PASSWORD/.test(c))return'Type the password.';
+  if(/TOO_MANY_ATTEMPTS/.test(c))return'Too many tries. Wait a few minutes and try again.';
+  if(/OPERATION_NOT_ALLOWED/.test(c))return'Email sign-in is not switched on in Firebase yet.';
+  if(/API key not valid|API_KEY/i.test(c))return'The Firebase key in this app is not valid.';
+  if(e&&e.status===403)return'Firebase refused: check the Firestore rules.';
+  if(e&&e.status===404)return'The Firestore database is not created yet in Firebase.';
+  if(/TOKEN_EXPIRED|INVALID_REFRESH_TOKEN|USER_NOT_FOUND|USER_DISABLED/.test(c))return'Please sign in again.';
+  return'Could not reach the cloud ('+(c||e&&e.status||'error')+').';
+}
+function fbJson(url,body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return{}}).then(function(j){if(!r.ok){var e=new Error((j.error&&j.error.message)||'error');e.code=(j.error&&j.error.message)||'';e.status=r.status;throw e}return j})})}
+function acctUrl(ep){return'https://identitytoolkit.googleapis.com/v1/accounts:'+ep+'?key='+encodeURIComponent(FB.apiKey)}
+function acctSign(mode,email,pw){
+  return fbJson(acctUrl(mode==='up'?'signUp':'signInWithPassword'),{email:email,password:pw,returnSecureToken:true}).then(function(j){
+    AC.u={email:j.email||email,uid:j.localId,refresh:j.refreshToken,idToken:j.idToken,exp:Date.now()+(+j.expiresIn||3600)*1000-60000};store(AK,AC.u);
+    if(SY.uid&&SY.uid!==AC.u.uid){SY.dead={};SY.last=0}SY.uid=AC.u.uid;SY.dirty=true;saveSY();
+  });
+}
+function acctToken(){
+  var u=AC.u;if(!u)return Promise.reject(new Error('NOT_SIGNED_IN'));
+  if(u.idToken&&Date.now()<u.exp)return Promise.resolve(u.idToken);
+  return fetch('https://securetoken.googleapis.com/v1/token?key='+encodeURIComponent(FB.apiKey),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(u.refresh)}).then(function(r){
+    return r.json().catch(function(){return{}}).then(function(j){
+      if(!r.ok){var c=(j.error&&j.error.message)||'';if(/TOKEN_EXPIRED|INVALID_REFRESH_TOKEN|USER_NOT_FOUND|USER_DISABLED/.test(c)){AC.u=null;store(AK,null)}var e=new Error(c||'refresh');e.code=c;e.status=r.status;throw e}
+      u.idToken=j.id_token;u.refresh=j.refresh_token||u.refresh;u.exp=Date.now()+(+j.expires_in||3600)*1000-60000;store(AK,u);return u.idToken;
+    });
+  });
+}
+function fsBase(){return'https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FB.projectId)+'/databases/(default)/documents/users/'+encodeURIComponent(AC.u.uid)+'/plots'}
+function fsReq(method,path,body,tok){
+  return fetch(fsBase()+path,{method:method,headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){
+    return r.json().catch(function(){return{}}).then(function(j){if(!r.ok){var e=new Error((j.error&&j.error.status)||'firestore');e.status=r.status;e.code=(j.error&&j.error.status)||'';throw e}return j});
+  });
+}
+function fsFields(json,upd,del){return{fields:{json:{stringValue:json||''},upd:{integerValue:String(upd)},del:{booleanValue:!!del}}}}
+function fsList(tok){
+  var out=[];
+  var next=function(pt){return fsReq('GET','?pageSize=200'+(pt?'&pageToken='+encodeURIComponent(pt):''),null,tok).then(function(j){
+    (j.documents||[]).forEach(function(d){var f=d.fields||{};out.push({id:d.name.split('/').pop(),json:(f.json&&f.json.stringValue)||'',upd:+((f.upd&&f.upd.integerValue)||0),del:!!(f.del&&f.del.booleanValue)})});
+    return j.nextPageToken?next(j.nextPageToken):out});};
+  return next('');
+}
+// newest copy wins, plot by plot. A deleted plot leaves a small "deleted" note in the cloud so other phones remove it too.
+function syncMerge(tok,rem){
+  var R={},L={},ids={},jobs=[],changed=false;
+  rem.forEach(function(r){R[r.id]=r;ids[r.id]=1});S.plots.forEach(function(p){L[p.id]=p;ids[p.id]=1});Object.keys(SY.dead).forEach(function(id){ids[id]=1});
+  Object.keys(ids).forEach(function(id){
+    var r=R[id],l=L[id],d=SY.dead[id],lt=l?(l.upd||l.ts||0):(d||0);
+    if(r&&r.upd>lt){
+      if(r.del){if(l){S.plots=S.plots.filter(function(x){return x.id!==id});delete SY.h[id];changed=true}SY.dead[id]=r.upd}
+      else{try{var np=JSON.parse(r.json);np.upd=r.upd;if(l)keepPh(np,l);S.plots=S.plots.filter(function(x){return x.id!==id});S.plots.push(np);SY.h[id]=plotSync(np);delete SY.dead[id];changed=true}catch(e){}}
+    }else if(!r||lt>r.upd){
+      if(l)jobs.push(fsReq('PATCH','/'+encodeURIComponent(id),fsFields(plotSync(l),l.upd||l.ts||0,false),tok));
+      else if(d)jobs.push(fsReq('PATCH','/'+encodeURIComponent(id),fsFields('',d,true),tok));
+    }
+  });
+  if(changed){S.plots.sort(function(a,b){return b.ts-a.ts});NOTOUCH=true;savePlots();NOTOUCH=false;try{gcPhotos()}catch(e){}}
+  return Promise.all(jobs).then(function(){return changed});
+}
+function syncNow(){
+  if(!fbOn()||!AC.u)return Promise.resolve();
+  if(AC.busy)return AC.busy;
+  AC.err='';acctUi();
+  var run=function(retry){return acctToken().then(function(tok){return fsList(tok).then(function(rem){return syncMerge(tok,rem)})}).catch(function(e){if(e&&e.status===401&&retry&&AC.u){AC.u.exp=0;return run(false)}throw e})};
+  AC.busy=run(true).then(function(changed){SY.dirty=false;SY.last=Date.now();saveSY();AC.err='';if(changed&&S.tab==='plots'&&!S.viewId)renderPlots()}).catch(function(e){AC.err=fbMsg(e)}).then(function(){AC.busy=null;acctUi()});
+  return AC.busy;
+}
+function syncSoon(){if(!fbOn()||!AC.u)return;clearTimeout(AC.t);AC.t=setTimeout(function(){syncNow()},1500)}
+function cloudOk(){return fbOn()&&!!AC.u&&!SY.dirty&&SY.last>0}
+function acctAgo(){if(!SY.last)return'not yet';var m=Math.floor((Date.now()-SY.last)/6e4);return m<1?'just now':m<60?m+' min ago':m<1440?Math.floor(m/60)+' h ago':Math.floor(m/1440)+' days ago'}
+function acctStatus(){
+  if(!AC.u)return esc(AC.err||'');
+  if(AC.busy)return'Syncing…';
+  if(AC.err)return'<span style="color:var(--bad)">'+esc(AC.err)+'</span>'+(SY.dirty?' Changes wait on this phone.':'');
+  return SY.dirty?'Waiting to sync…':'Synced '+acctAgo()+' · '+S.plots.length+' plot'+(S.plots.length===1?'':'s');
+}
+function acctUi(){var el=$('#acMsg');if(el)el.innerHTML=acctStatus();if(S.tab==='plots'&&!S.viewId&&!document.activeElement.matches('#fSearch'))renderPlots()}
+function acctCardHTML(){
+  var t='<div class="card"><h2>Account and cloud backup</h2>';
+  if(!fbOn())return t+'<div class="mut small">Not switched on in this version yet. Use the file backup below.</div></div>';
+  if(!AC.u)return t+'<div class="mut small">Sign in with your email. Your plots are then saved in your own account and come back on any phone, even if you delete the icon.</div><label>Email</label><input id="acE" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" placeholder="you@gmail.com"><label>Password</label><input id="acP" type="password" autocomplete="current-password" placeholder="at least 6 characters"><div class="row" style="margin-top:10px"><button class="pri" id="acIn">Sign in</button><button id="acUp">Create account</button></div><button id="acForgot" style="width:100%;margin-top:8px">Forgot password</button><div class="small" id="acMsg" style="margin-top:8px;color:var(--bad)">'+acctStatus()+'</div><div class="mut small" style="margin-top:6px">First time: tap Create account. Only plots are saved in the cloud. Photos of points stay on the phone.</div></div>';
+  return t+'<div class="small">Signed in as <b>'+esc(AC.u.email)+'</b></div><div class="small" id="acMsg" style="margin-top:6px">'+acctStatus()+'</div><div class="row" style="margin-top:10px"><button class="pri" id="acSync">Sync now</button><button id="acOut">Sign out</button></div><div class="mut small" style="margin-top:8px">Plots sync by themselves when you save, change or delete one. Photos of points stay on the phone.</div></div>';
+}
+function acctBind(){
+  var b;
+  if((b=$('#acIn')))b.onclick=function(){acctDo('in')};
+  if((b=$('#acUp')))b.onclick=function(){acctDo('up')};
+  if((b=$('#acForgot')))b.onclick=function(){
+    var em=($('#acE').value||'').trim();if(!em){AC.err='Type your email first.';acctUi();return}
+    fbJson(acctUrl('sendOobCode'),{requestType:'PASSWORD_RESET',email:em}).then(function(){toast('Password reset email sent. Check your inbox and spam.')}).catch(function(e){AC.err=fbMsg(e);acctUi()});
+  };
+  if((b=$('#acSync')))b.onclick=function(){syncNow()};
+  if((b=$('#acOut')))b.onclick=function(){choose('Sign out?','Your plots stay on this phone but stop syncing. Sign in again to continue.',[{label:'Sign out',val:true,cls:'danger'},{label:'Stay signed in',val:false}]).then(function(v){if(v){AC.u=null;store(AK,null);AC.err='';renderMore()}})};
+}
+function acctDo(mode){
+  var em=($('#acE').value||'').trim(),pw=$('#acP').value||'';
+  if(!em||!pw){AC.err='Type your email and password.';acctUi();return}
+  if(AC.busy)return;AC.err='';$('#acMsg').textContent=mode==='up'?'Creating account…':'Signing in…';
+  AC.busy=acctSign(mode,em,pw).then(function(){AC.busy=null;return syncNow()}).then(function(){toast(mode==='up'?'Account created':'Signed in');if(S.tab==='more')renderMore();else if(S.tab==='plots')renderPlots()}).catch(function(e){AC.busy=null;AC.err=fbMsg(e);acctUi()});
 }
 
 // ---------- formatting ----------
@@ -478,7 +605,7 @@ function share(title,text,filename,mime,done){
 // ---------- backup: saved plots live only inside this app, so a backup file is the only safety net ----------
 var LBK='lm.backup.v1',LBA='lm.backupask.v1';
 function lastBackup(){return load(LBK,null)}
-function backupNeeded(){if(!S.plots.length)return false;var lb=lastBackup();return!lb||Date.now()-lb.t>7*864e5||S.plots.length>lb.n}
+function backupNeeded(){if(!S.plots.length||cloudOk())return false;var lb=lastBackup();return!lb||Date.now()-lb.t>7*864e5||S.plots.length>lb.n}
 function backupAgo(){var lb=lastBackup();if(!lb)return'never';var d=Math.floor((Date.now()-lb.t)/864e5);return(d<1?'today':d===1?'yesterday':d+' days ago')+' ('+lb.n+' plot'+(lb.n===1?'':'s')+')'}
 function backupJSON(){var pl=clone(S.plots);pl.forEach(function(p){allRings(p).forEach(function(r){r.forEach(function(c){delete c.ph})})});return JSON.stringify({app:'land-measure',v:2,exported:Date.now(),plots:pl},null,1)}
 function backupNow(after){
@@ -489,15 +616,20 @@ function backupNow(after){
 function isStandalone(){return window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)}
 function isIOS(){return/iPhone|iPad|iPod/.test(navigator.userAgent||'')}
 function backupAsk(){
-  if(!backupNeeded())return;var lb=lastBackup();
+  if(!backupNeeded()||(fbOn()&&AC.u))return;var lb=lastBackup();
   if(lb&&Date.now()-lb.t<864e5)return;
   if(Date.now()-load(LBA,0)<3*36e5)return;store(LBA,Date.now());
-  choose('Back up your plots?','Saved plots live only inside this app. If you delete the Home Screen icon or clear Safari data, they are erased for good. Save a backup file to Files, iCloud Drive or WhatsApp now.',[{label:'Back up now',val:true,cls:'pri'},{label:'Later',val:false}]).then(function(v){if(v)backupNow()});
+  var acct=fbOn();
+  choose('Back up your plots?','Saved plots live only inside this app. If you delete the Home Screen icon or clear Safari data, they are erased for good. '+(acct?'Sign in with your email to keep them in your account, or save a backup file.':'Save a backup file to Files, iCloud Drive or WhatsApp now.'),(acct?[{label:'Sign in / create account',val:'acct',cls:'pri'},{label:'Back up to a file',val:'file'}]:[{label:'Back up now',val:'file',cls:'pri'}]).concat([{label:'Later',val:false}])).then(function(v){if(v==='file')backupNow();else if(v==='acct'){S.tab='more';render()}});
 }
 function backupCard(){
   var h='';
   if(isIOS()&&!isStandalone())h+='<div class="card"><div class="small"><b>This is a Safari tab, not the Home Screen icon.</b> Plots saved here do not show in the icon, and the other way round. Pick one and always open it the same way.</div></div>';
-  if(backupNeeded())h+='<div class="card" style="border:2px solid var(--warn)"><h2>Back up your plots</h2><div class="small">Last backup: '+backupAgo()+'. Plots live only inside this app. Deleting the Home Screen icon or clearing Safari data erases all of them.</div><button class="pri" id="bNow" style="width:100%;margin-top:10px">Back up now</button></div>';
+  if(backupNeeded()){
+    var inn=fbOn()&&AC.u,out=fbOn()&&!AC.u;
+    h+='<div class="card" style="border:2px solid var(--warn)"><h2>Back up your plots</h2><div class="small">'+(inn?'Waiting to sync to your account. '+(AC.err?esc(AC.err)+' ':''):'')+'Last file backup: '+backupAgo()+'. Plots live only inside this app. Deleting the Home Screen icon or clearing Safari data erases all of them.</div>'
+      +(inn?'<button class="pri" id="bSyncNow" style="width:100%;margin-top:10px">Sync now</button><button id="bNow" style="width:100%;margin-top:8px">Back up to a file</button>':out?'<button class="pri" id="bSign" style="width:100%;margin-top:10px">Sign in to save in your account</button><button id="bNow" style="width:100%;margin-top:8px">Back up to a file</button>':'<button class="pri" id="bNow" style="width:100%;margin-top:10px">Back up now</button>')+'</div>';
+  }
   return h;
 }
 
@@ -1878,6 +2010,8 @@ function renderPlots(){
   });
   $('#app').innerHTML=h;
   if($('#bNow'))$('#bNow').onclick=function(){backupNow(function(){toast('Backup saved. Keep that file safe');renderPlots()})};
+  if($('#bSign'))$('#bSign').onclick=function(){S.tab='more';render()};
+  if($('#bSyncNow'))$('#bSyncNow').onclick=function(){syncNow()};
   var s=$('#fSearch');if(s)s.oninput=function(){S.filter=this.value;var pos=this.selectionStart;renderPlots();var n=$('#fSearch');n.focus();n.setSelectionRange(pos,pos)};
   document.querySelectorAll('.plotitem').forEach(function(b){b.onclick=function(){S.viewId=b.dataset.id;renderPlots();window.scrollTo(0,0)}});
 }
@@ -1964,7 +2098,7 @@ function renderDetail(p){
   $('#bKml').onclick=function(){share(p.name+' KML',kmlOf([p]),fileBase(p)+'.kml','application/vnd.google-earth.kml+xml')};
   $('#bPdf').onclick=function(){planBlob(p,an,'pdf').then(function(b){saveBlob(p.name+' plan',b,fileBase(p)+'-plan.pdf')}).catch(function(){toast('Could not make the PDF')})};
   $('#bPng').onclick=function(){planBlob(p,an,'png').then(function(b){saveBlob(p.name+' plan',b,fileBase(p)+'-plan.png')}).catch(function(){toast('Could not make the picture')})};
-  $('#bDel').onclick=function(){choose('Delete this plot?',esc(p.name)+' will be removed from this phone.',[{label:'Delete',val:true,cls:'danger'},{label:'Cancel',val:false}]).then(function(ok){if(ok){S.plots=S.plots.filter(function(x){return x.id!==p.id});savePlots();S.viewId=null;renderPlots();gcPhotos()}})};
+  $('#bDel').onclick=function(){choose('Delete this plot?',esc(p.name)+(fbOn()&&AC.u?' will be removed from this phone and from your account.':' will be removed from this phone.'),[{label:'Delete',val:true,cls:'danger'},{label:'Cancel',val:false}]).then(function(ok){if(ok){S.plots=S.plots.filter(function(x){return x.id!==p.id});savePlots();S.viewId=null;renderPlots();gcPhotos()}})};
   $('#bRename').onclick=function(){
     sheet('<h3>Rename</h3><label>Name</label><input id="rN" value="'+esc(p.name)+'"><label>Place</label><input id="rP" value="'+esc(p.place)+'"><div class="row"><button class="pri" id="rOk">Save</button><button id="rNo">Cancel</button></div>');
     $('#rNo').onclick=closeSheet;$('#rOk').onclick=function(){p.name=$('#rN').value.trim()||p.name;p.place=$('#rP').value.trim();savePlots();closeSheet();renderPlots()};
@@ -1974,7 +2108,7 @@ function renderDetail(p){
 function renderMore(){
   var st=S.settings;
   var opt=function(vals,cur,lab){return vals.map(function(v){return'<option value="'+v+'"'+(String(cur)===String(v)?' selected':'')+'>'+(lab?lab(v):v)+'</option>'}).join('')};
-  var h='<div class="card"><h2>Settings</h2><label>Averaging time per corner</label><select id="sDur">'+opt([15,30,45,60,90],st.dur,function(v){return v+' seconds'})+'</select>';
+  var h=acctCardHTML()+'<div class="card"><h2>Settings</h2><label>Averaging time per corner</label><select id="sDur">'+opt([15,30,45,60,90],st.dur,function(v){return v+' seconds'})+'</select>';
   h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+fl(v,0)})+'</select>';
   h+='<label>Main area unit</label><select id="sUnit"><option value="cent"'+(st.unit==='cent'?' selected':'')+'>cent</option><option value="acre"'+(st.unit==='acre'?' selected':'')+'>acre</option><option value="sqm"'+(st.unit==='sqm'?' selected':'')+'>sq m</option><option value="sqft"'+(st.unit==='sqft'?' selected':'')+'>sq ft</option></select>';
   h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select></div>';
@@ -1985,6 +2119,7 @@ function renderMore(){
   h+='<div class="card"><h2>Tips for best results</h2><ul class="tips small"><li>Stand in the open, away from trees, walls and vehicles.</li><li>Wait until the GPS chip at the top shows green or amber before you capture.</li><li>Take all corners in one session, within about 15 minutes. Common GPS errors then cancel out in the area.</li><li>Take corners in order around the plot (clockwise or anticlockwise).</li><li>Keep the phone steady and the screen on. The app asks the phone to stay awake.</li><li>Measure again on another day or time of day and compare. If the two areas differ, trust neither fully.</li></ul></div>';
   h+='<div class="card"><h2>Install on iPhone</h2><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li><b>Do not delete the icon.</b> Deleting it erases the plots saved inside it. Back up first (More tab, Backup).</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></div>';
   $('#app').innerHTML=h;
+  acctBind();
   $('#sDur').onchange=function(){st.dur=+this.value;saveSettings()};
   $('#sAcc').onchange=function(){st.maxAcc=+this.value;saveSettings()};
   $('#sUnit').onchange=function(){st.unit=this.value;saveSettings()};
@@ -2007,6 +2142,9 @@ function renderMore(){
 }
 
 render();
+if(fbOn()&&AC.u)setTimeout(syncNow,800);
+window.addEventListener('online',function(){syncSoon()});
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&fbOn()&&AC.u&&Date.now()-SY.last>12e4)syncSoon()});
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(function(){})}catch(e){}
 if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){try{navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}}
 // auto-start GPS if the user has used the app before (permission already granted)
