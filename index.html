@@ -304,7 +304,7 @@ function splitIdeas(P,H){
     {id:'fan',title:'From a corner',desc:'2 equal parts, cut starts at one corner',cfg:{dir:'fan',ref:L,n:2}},
     {id:'quarter',title:'Keep a quarter',desc:'One quarter at the long side, the rest behind',cfg:{dir:'par',ref:L,ratio:[1,3]}}
   ];
-  if(total>150)list.push({id:'road',title:'3 m access road',desc:'A 3 m strip along the long side, rest as one part',cfg:{dir:'par',ref:L,widths:[3]}});
+  if(total>150)list.push({id:'road',title:'3 m (10 ft) access road',desc:'A 3 m strip along the long side, rest as one part',cfg:{dir:'par',ref:L,widths:[3]}});
   var out=[];list.forEach(function(it){var r=splitCompute(P,H||[],it.cfg);if(r.ok&&r.parts.every(function(p){return p.poly.length>=3&&p.area>0.01}))out.push({id:it.id,title:it.title,desc:it.desc,cfg:it.cfg,res:r})});
   return out;
 }
@@ -376,7 +376,7 @@ function store(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}ca
 
 var S={
   tab:'measure',viewId:null,filter:'',
-  settings:Object.assign({dur:30,maxAcc:20,unit:'cent'},load(K.settings,{})),
+  settings:Object.assign({dur:30,maxAcc:20,unit:'cent',lunit:'m'},load(K.settings,{})),
   plots:load(K.plots,[]),
   draft:Object.assign({name:'',place:'',notes:'',mode:'corners',corners:[],holes:[],rec:null,tape:null},load(K.draft,{})),
   gps:{watching:false,id:null,lat:null,lon:null,acc:null,rx:0,err:null},
@@ -417,6 +417,10 @@ function saveBlob(title,blob,filename){
 
 // ---------- formatting ----------
 function num(v,d){return v.toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d})}
+var FT=3.280839895;
+function inFt(){return !!(S&&S.settings&&S.settings.lunit==='ft')}
+function fl(m,d){d=(d==null?1:d);return inFt()?num(m*FT,d)+' ft':num(m,d)+' m'}
+function lu(){return inFt()?'ft':'m'}
 function fa(a,u){var v=UNIT[u].f(a);return u==='cent'?num(v,2):u==='acre'?num(v,4):u==='sqm'?num(v,1):num(v,0)}
 function fdate(ts){var d=new Date(ts);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
 function quality(rel){return rel<=0.01?{t:'Good',c:'good',d:'about ±1% or better'}:rel<=0.03?{t:'Fair',c:'warn',d:'about ±3%'}:rel<=0.08?{t:'Rough',c:'warn',d:'about ±5–8%'}:{t:'Too rough',c:'bad',d:'error is large for this plot size. Use tape or laser for small plots'}}
@@ -481,10 +485,10 @@ function gpsState(){
   if(!g.watching)return{t:'GPS off · tap',c:'off'};
   if(g.err===2)return{t:'GPS unavailable',c:'bad'};
   if(g.acc==null||Date.now()-g.rx>10000)return{t:'Searching…',c:'warn'};
-  return{t:'±'+g.acc.toFixed(1)+' m',c:g.acc<=3?'good':g.acc<=8?'warn':'bad'};
+  return{t:'±'+fl(g.acc,1),c:g.acc<=3?'good':g.acc<=8?'warn':'bad'};
 }
 function updateChip(){var el=$('#gpsChip'),s=gpsState();el.className='chip '+s.c;el.textContent=s.t}
-$('#gpsChip').onclick=function(){if(S.gps.watching){toast(S.gps.acc!=null?'GPS is on, accuracy ±'+S.gps.acc.toFixed(1)+' m':'Searching for GPS signal…')}else startGPS()};
+$('#gpsChip').onclick=function(){if(S.gps.watching){toast(S.gps.acc!=null?'GPS is on, accuracy ±'+fl(S.gps.acc,1):'Searching for GPS signal…')}else startGPS()};
 
 // ---------- motion sensor (is the phone held still?) ----------
 function startMotion(){
@@ -532,10 +536,10 @@ function updateLive(){
     var el=(Date.now()-S.cap.t0),f=Math.min(1,el/S.cap.dur),b=$('#capbar'),t=$('#captxt');
     if(b)b.style.width=(f*100)+'%';
     if(t){var best=S.cap.samples.length?Math.min.apply(null,S.cap.samples.map(function(s){return s.acc})):null;
-      t.textContent=Math.min(S.settings.dur,Math.floor(el/1000))+' / '+S.settings.dur+' s · '+S.cap.samples.length+' readings'+(best!=null?' · best ±'+best.toFixed(1)+' m':' · waiting for GPS')+(S.cap.moved?' · '+S.cap.moved+' skipped (phone moved)':'')+(isMoving()?' · HOLD STILL':'')}
+      t.textContent=Math.min(S.settings.dur,Math.floor(el/1000))+' / '+S.settings.dur+' s · '+S.cap.samples.length+' readings'+(best!=null?' · best ±'+fl(best,1):' · waiting for GPS')+(S.cap.moved?' · '+S.cap.moved+' skipped (phone moved)':'')+(isMoving()?' · HOLD STILL':'')}
     if(f>=1)finishCapture();
   }
-  if(S.walk){var t2=$('#walktxt');if(t2)t2.textContent=S.walk.pts.length+' points · '+Math.round(S.walk.len)+' m walked'+(S.gps.acc!=null?' · GPS ±'+S.gps.acc.toFixed(1)+' m':'')}
+  if(S.walk){var t2=$('#walktxt');if(t2)t2.textContent=S.walk.pts.length+' points · '+fl(S.walk.len,0)+' walked'+(S.gps.acc!=null?' · GPS ±'+fl(S.gps.acc,1):'')}
 }
 setInterval(function(){updateChip();updateLive()},250);
 
@@ -557,7 +561,7 @@ function svgPoly(an){
   Q.forEach(function(q,i){
     if(few){
       var nq=Q[(i+1)%Q.length],mx=(q.x+nq.x)/2,my=(q.y+nq.y)/2;
-      s+='<text x="'+mx.toFixed(1)+'" y="'+(my-4).toFixed(1)+'" text-anchor="middle" font-size="11" style="fill:var(--ink);paint-order:stroke;stroke:var(--bg);stroke-width:3px">'+an.sides[i].toFixed(1)+' m</text>';
+      s+='<text x="'+mx.toFixed(1)+'" y="'+(my-4).toFixed(1)+'" text-anchor="middle" font-size="11" style="fill:var(--ink);paint-order:stroke;stroke:var(--bg);stroke-width:3px">'+fl(an.sides[i],1)+'</text>';
       s+='<circle cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="9" fill="var(--acc)"/><text x="'+q.x.toFixed(1)+'" y="'+(q.y+4).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">'+(i+1)+'</text>';
     }else s+='<circle cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="2.5" fill="var(--acc)"/>';
   });
@@ -580,7 +584,7 @@ function recHTML(an,rec){
 
 function resultHTML(an,mode,withSave,o){
   var q=quality(an.rel),u=S.settings.unit,oth=['cent','acre','sqm','sqft'].filter(function(x){return x!==u}),k=haAre(an.net),d2=u==='cent'?2:u==='acre'?4:u==='sqm'?1:0;
-  var h='<div class="mut small">'+(an.holeArea>0?'Net area (horizontal)':'Map area (horizontal)')+'</div><div class="big-num">'+fa(an.net,u)+' <small>'+UNIT[u].l+'</small></div>';
+  var h='<div class="mut small">'+(an.holeArea>0?'Net area (horizontal)':'Map area (horizontal)')+'</div><div class="big-num" data-cyc="1" style="cursor:pointer">'+fa(an.net,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small" style="margin-top:-2px">Tap the number to change the unit</div>';
   if(an.holeArea>0)h+='<div class="mut small">Plot '+fa(an.area,u)+' &minus; excluded '+fa(an.holeArea,u)+' '+UNIT[u].l+' ('+an.H.length+' area'+(an.H.length===1?'':'s')+')</div>';
   h+='<div style="margin:6px 0"><span class="tag '+q.c+'">'+q.t+'</span> <span class="mut small">typical error ±'+num(UNIT[u].f(an.sig),d2)+' '+UNIT[u].l+' ('+(an.rel*100).toFixed(1)+'%)</span></div>';
   var how=an.meth==='tape'?'Worked out from the tape lengths you entered. The error shown assumes about 3 cm + 0.2% per length. A sagging or slanting tape adds more.':an.meth==='map'?'Estimate from points traced on satellite imagery (no GPS). Trees, shadows and old pictures can hide the real boundary.':an.nmap?an.nmap+' of '+an.n+' points were placed on the satellite map. The rest come from GPS.':an.ntape?'Some points come from tape lengths, the rest from GPS or the map.':'Estimate from the GPS accuracy reported by the phone.';
@@ -589,7 +593,7 @@ function resultHTML(an,mode,withSave,o){
   if(o&&o.rec)h+=recHTML(an,o.rec);
   h+='<table>'+oth.map(function(x){return'<tr><td>'+UNIT[x].l+'</td><td>'+fa(an.net,x)+'</td></tr>'}).join('');
   h+='<tr><td>Hectare · Are · sq m</td><td>'+k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m²</td></tr>';
-  h+='<tr><td>Perimeter</td><td>'+num(an.per,1)+' m</td></tr>'+slopeRows(an,u)+'</table>';
+  h+='<tr><td>Perimeter</td><td>'+fl(an.per,1)+'</td></tr>'+slopeRows(an,u)+'</table>';
   if(an.ngps>0)h+='<div class="mut small" style="margin-top:8px">The slope is worked out from the phone’s GPS height at your corners. It is rough, and only slopes steeper than a few degrees show up.</div>';
   h+=svgPoly(an);
   return h;
@@ -621,7 +625,7 @@ function setAnchor(geo,sx,sy,z){z=Math.max(MINZ,Math.min(MAXZ,z));MS.zoom=z;MS.l
 function cobj(){return M.view||S.draft}
 function cur(){return cobj().corners}
 function act(){var o=cobj();if(!M.view&&M.ring>=0&&o.holes[M.ring])return o.holes[M.ring].corners;return o.corners}
-function fmtLen(m){return m<1000?num(m,1)+' m':num(m/1000,2)+' km'}
+function fmtLen(m){if(inFt())return num(m*FT,1)+' ft';return m<1000?fl(m,1):num(m/1000,2)+' km'}
 function saveView(){clearTimeout(M.saveT);M.saveT=setTimeout(function(){store(KM,MS)},300)}
 function scheduleDraw(){if(!M.raf&&M.cv)M.raf=requestAnimationFrame(mapDraw);else if(M.mm&&!M.mmRaf&&!M.cv)mmSched()}
 function mmSched(){if(M.mm&&!M.mmRaf)M.mmRaf=requestAnimationFrame(mmDraw)}
@@ -794,10 +798,10 @@ function drawSaved(ctx){
 }
 function mapScale(res){
   var el=$('#msc');if(!el)return;
-  var tgt=100*res,steps=[1,2,5,10,20,50,100,200,500,1000,2000,5000,10000,20000,50000],L=steps[0];
+  var ft=inFt(),k=ft?FT:1,tgt=100*res*k,steps=[1,2,5,10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000],L=steps[0];
   for(var i=0;i<steps.length;i++){if(steps[i]<=tgt)L=steps[i]}
-  var key=Math.round(L/res)+'|'+L;if(key===M.lastScale)return;M.lastScale=key;
-  el.firstChild.style.width=Math.round(L/res)+'px';el.lastChild.textContent=L>=1000?(L/1000)+' km':L+' m';
+  var key=Math.round(L/k/res)+'|'+L+'|'+ft;if(key===M.lastScale)return;M.lastScale=key;
+  el.firstChild.style.width=Math.round(L/k/res)+'px';el.lastChild.textContent=ft?L+' ft':(L>=1000?(L/1000)+' km':L+' m');
 }
 function mapPanel(C,mode,an,o){
   var el=$('#mpanel');if(!el)return;
@@ -811,7 +815,7 @@ function mapPanel(C,mode,an,o){
   }else if(M.split){
     h+='<div class="a" style="font-size:17px">Split plot</div><div class="c">'+esc(M.split.err||'Pick how to split below')+'</div>';
   }else if(an){
-    var o2=['cent','acre','sqm'].filter(function(x){return x!==u}).slice(0,2),src=methLabel(an.meth);src=src.charAt(0).toUpperCase()+src.slice(1);
+    var o2=['cent','acre','sqft','sqm'].filter(function(x){return x!==u}).slice(0,2),src=methLabel(an.meth);src=src.charAt(0).toUpperCase()+src.slice(1);
     h+='<div class="a">'+fa(an.net,u)+' '+UNIT[u].l+'<small>'+o2.map(function(x){return fa(an.net,x)+' '+UNIT[x].l}).join(' · ')+'</small></div>';
     if(an.holeArea>0)h+='<div class="b">Plot '+fa(an.area,u)+' &minus; excluded <b>'+fa(an.holeArea,u)+'</b> '+UNIT[u].l+'</div>';
     h+='<div class="b">Perimeter <b>'+fmtLen(an.per)+'</b>'+(M.view||n<2?'':' · Last side <b>'+fmtLen(dist(C[n-2],C[n-1]))+'</b>')+' · '+n+' points</div>';
@@ -931,7 +935,7 @@ function gcPhotos(){
 }
 function selectVertex(i){
   var A=act(),c=A[i];if(!c)return;
-  var d=c.src==='tape'?'From tape lengths.':c.src==='cut'?'Corner made by a split cut.':placed(c)?'Placed on the satellite map, about ±'+c.acc.toFixed(1)+' m.':'GPS point, ±'+c.acc.toFixed(1)+' m from '+c.n+' readings.';
+  var d=c.src==='tape'?'From tape lengths.':c.src==='cut'?'Corner made by a split cut.':placed(c)?'Placed on the satellite map, about ±'+fl(c.acc,1)+'.':'GPS point, ±'+fl(c.acc,1)+' from '+c.n+' readings.';
   sheet('<h3>'+(M.ring>=0?'Excluded area · ':'')+'Point '+(i+1)+'</h3><div class="mut small">'+d+' Drag the point to move it.</div><label>Note (boundary stone, well, tree …)</label><input id="vN" value="'+esc(c.note||'')+'" maxlength="160" autocomplete="off"><div class="thumbs" id="vTh"></div><div class="row"><button id="vPh">&#128247; Add photo</button></div><input type="file" id="vF" accept="image/*" style="display:none"><div class="row"><button class="pri" id="vOk">Done</button><button class="danger" id="vDel">Delete point</button></div>');
   var th=function(){thumbsInto($('#vTh'),c.ph,function(id){c.ph=c.ph.filter(function(x){return x!==id});if(!c.ph.length)delete c.ph;saveDraft();th();scheduleDraw();gcPhotos()})};th();
   $('#vN').oninput=function(){var v=this.value.trim();if(v)c.note=v;else delete c.note;saveDraft();scheduleDraw()};
@@ -1021,7 +1025,7 @@ function mmDraw(){
   var gb=$('#mmGps');if(gb)gb.style.display=gpsOk?'none':'block';
   var key='<span class="mmk" style="background:#1f7a4d"></span>GPS corner &nbsp;<span class="mmk" style="background:#fff;border:2px solid #ffd23f;box-sizing:border-box"></span>map point &nbsp;<span class="mmk" style="background:#2f80ff"></span>you';
   if(gpsOk){
-    info='<b>You are here</b> (±'+(g.acc!=null?g.acc.toFixed(1):'?')+' m)';
+    info='<b>You are here</b> (±'+(g.acc!=null?fl(g.acc,1):'?')+')';
     if(C.length>=3){var X=toXY(C,C[0].lat,C[0].lon),me=toXY([{lat:g.lat,lon:g.lon}],C[0].lat,C[0].lon)[0];
       var ed=1e9;for(var k=0;k<X.length;k++){var A=X[k],B=X[(k+1)%X.length],dx=B.x-A.x,dy=B.y-A.y,L2=dx*dx+dy*dy,t=L2?Math.max(0,Math.min(1,((me.x-A.x)*dx+(me.y-A.y)*dy)/L2)):0;ed=Math.min(ed,Math.hypot(me.x-A.x-t*dx,me.y-A.y-t*dy))}
       if(pointInPoly(me,X))info+=' · <b style="color:#1f7a4d">inside the marked plot</b>';
@@ -1054,6 +1058,7 @@ function openPop(kind){
       +'<label class="ck"><input type="checkbox" id="mSide"'+(MS.sides?' checked':'')+'>Side lengths</label>'
       +'<label class="ck"><input type="checkbox" id="mSaved"'+(MS.saved?' checked':'')+'>Show saved plots</label>'
       +'<label class="ck"><input type="checkbox" id="mLab"'+(MS.labels?' checked':'')+'>Place names (zoomed out)</label>'
+      +'<div class="pt"><span>Units</span></div><div class="row"><select id="mAU">'+[['cent','cent'],['acre','acre'],['sqm','sq m'],['sqft','sq ft']].map(function(a){return'<option value="'+a[0]+'"'+(S.settings.unit===a[0]?' selected':'')+'>'+a[1]+'</option>'}).join('')+'</select><select id="mLU"><option value="m"'+(S.settings.lunit!=='ft'?' selected':'')+'>metres</option><option value="ft"'+(S.settings.lunit==='ft'?' selected':'')+'>feet</option></select></div>'
       +'<div class="pt"><span>Sharpest picture level</span></div><select id="mNat"><option value="0"'+(!MS.nat?' selected':'')+'>Auto (best available)</option>'+[19,18,17,16].map(function(v){return'<option value="'+v+'"'+(MS.nat===v?' selected':'')+'>Up to level '+v+'</option>'}).join('')+'</select>'
       +'<label class="ck"><input type="checkbox" id="mLoupe"'+(MS.loupe!==false?' checked':'')+'>Magnifier when dragging a point</label>'
       +'<div class="pt">Add points by</div><div class="seg2"><button data-add="tap" class="'+(MS.add==='tap'?'on':'')+'">Tap on map</button><button data-add="centre" class="'+(MS.add==='centre'?'on':'')+'">Centre pin</button></div>'
@@ -1066,6 +1071,8 @@ function openPop(kind){
     $('#mLab').onchange=function(){MS.labels=this.checked;scheduleDraw();saveView()};
     $('#mLoupe').onchange=function(){MS.loupe=this.checked;saveView()};
     $('#mNat').onchange=function(){MS.nat=+this.value||0;saveView();scheduleDraw()};
+    $('#mAU').onchange=function(){S.settings.unit=this.value;saveSettings();M.lastPanel='';mapBottom();scheduleDraw()};
+    $('#mLU').onchange=function(){S.settings.lunit=this.value;saveSettings();M.lastPanel='';M.lastScale='';mapBottom();scheduleDraw()};
     el.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){MS.add=b.dataset.add;M.lastPanel='';saveView();el.querySelectorAll('[data-add]').forEach(function(x){x.classList.toggle('on',x===b)});mapBottom();scheduleDraw()}});
     if($('#mClear'))$('#mClear').onclick=function(){closePop();if(!S.draft.corners.length){toast('No points yet');return}choose('Remove all points?','All points of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){S.draft.corners=[];S.draft.holes=[];S.draft.tape=null;M.sel=-1;M.ring=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()}})};
   }
@@ -1202,7 +1209,7 @@ function tapeCalc(){
   r.sig=tapeSigma(v.sides,v.diags);r.sidesM=v.sides;r.diagsM=v.diags;return r;
 }
 function tapeSheet(){
-  if(!TP.loaded){TP.loaded=true;var t=S.draft.tape;if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.diags=(t.diags||[]).map(String);TP.brg=t.brg||0}}
+  if(!TP.loaded){TP.loaded=true;TP.u=inFt()?'ft':'m';var t=S.draft.tape;if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.diags=(t.diags||[]).map(String);TP.brg=t.brg||0}}
   var u=S.settings.unit,drawIn=function(){
     var n=TP.n,h='<h3>Tape lengths</h3><div class="mut small">Measure each side of the plot with a tape, going round in order. For a shape with 4 or more corners also measure the diagonals from point 1, so the shape is fixed.</div>';
     h+='<div class="row" style="align-items:center"><div style="flex:1.2">Corners</div><select id="tN">'+[3,4,5,6,7,8].map(function(x){return'<option'+(x===n?' selected':'')+'>'+x+'</option>'}).join('')+'</select><select id="tU"><option value="m"'+(TP.u==='m'?' selected':'')+'>metres</option><option value="ft"'+(TP.u==='ft'?' selected':'')+'>feet</option></select></div>';
@@ -1219,7 +1226,7 @@ function tapeSheet(){
     var upd=function(){
       var r=tapeCalc(),el=$('#tRes');
       if(!r.ok){el.innerHTML='<div class="mut small" style="margin-top:10px">'+esc(r.err||'')+'</div>';$('#tPlace').disabled=true;return}
-      el.innerHTML='<div style="margin-top:10px"><div class="big-num" style="font-size:28px">'+fa(r.area,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small">'+fa(r.area,'sqm')+' sq m · perimeter '+num(r.per,1)+' m · typical error ±'+fa(r.sig,u)+' '+UNIT[u].l+'</div>'+(r.warn?'<div class="warnbox">'+esc(r.warn)+'</div>':'')+svgPoly({P:r.P,H:[],sides:r.sidesM})+'</div>';
+      el.innerHTML='<div style="margin-top:10px"><div class="big-num" style="font-size:28px">'+fa(r.area,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small">'+fa(r.area,'sqm')+' sq m · perimeter '+fl(r.per,1)+' · typical error ±'+fa(r.sig,u)+' '+UNIT[u].l+'</div>'+(r.warn?'<div class="warnbox">'+esc(r.warn)+'</div>':'')+svgPoly({P:r.P,H:[],sides:r.sidesM})+'</div>';
       $('#tPlace').disabled=!!r.warn&&/cross|wraps/.test(r.warn);
     };
     $('#sheet').querySelectorAll('input[data-s]').forEach(function(x){x.oninput=function(){TP.sides[+x.dataset.s]=x.value;upd()}});
@@ -1261,14 +1268,14 @@ function splitCfg(sp){
   if(sp.kind==='equal')c.n=sp.nn;
   else if(sp.kind==='ratio')c.ratio=parseNums(v.ratio);
   else if(sp.kind==='areas')c.areas=parseNums(v.areas).map(function(x){return toSqm(x,S.settings.unit)});
-  else{c.dir='par';c.widths=parseNums(v.width)}
+  else{c.dir='par';c.widths=parseNums(v.width).map(function(x){return inFt()?x/FT:x})}
   return c;
 }
 function splitRecalc(){
   var sp=M.split,cfg=splitCfg(sp),err='';
   if(sp.kind==='ratio'&&cfg.ratio.length<2)err='Type two or more numbers, like 1:2 or 1:1:2';
   else if(sp.kind==='areas'&&(!cfg.areas.length||cfg.areas.some(function(x){return!(x>0)})))err='Type the size of each part except the last, like 10 or 10, 5';
-  else if(sp.kind==='road'&&(!cfg.widths.length||!(cfg.widths[0]>0)))err='Type the road width in metres';
+  else if(sp.kind==='road'&&(!cfg.widths.length||!(cfg.widths[0]>0)))err='Type the road width in '+(inFt()?'feet':'metres');
   sp.res=null;sp.geo=null;sp.cutGeo=null;sp.err=err;
   if(!err){
     var r=splitCompute(sp.an.P,sp.an.H,cfg);
@@ -1297,7 +1304,7 @@ function splitCardHTML(){
   if(sp.kind==='equal')h+='<div class="stp"><button id="spM">&minus;</button><b>'+sp.nn+' equal parts</b><button id="spP">+</button></div>';
   else if(sp.kind==='ratio')h+='<input type="text" id="spR" inputmode="text" value="'+esc(sp.vals.ratio)+'" placeholder="1:2:1" autocomplete="off"><div class="tiny">Shares, like 1:2 or 1:1:2</div>';
   else if(sp.kind==='areas')h+='<input type="text" id="spA" inputmode="text" value="'+esc(sp.vals.areas)+'" placeholder="10, 5" autocomplete="off"><div class="tiny">Size of each part in '+UNIT[u].l+'. What is left becomes the last part.</div>';
-  else h+='<input type="text" id="spW" inputmode="decimal" value="'+esc(sp.vals.width)+'" placeholder="3" autocomplete="off"><div class="tiny">Road width in metres along the chosen side. The rest is one part.</div>';
+  else h+='<input type="text" id="spW" inputmode="decimal" value="'+esc(sp.vals.width)+'" placeholder="'+(inFt()?'10':'3')+'" autocomplete="off"><div class="tiny">Road width in '+(inFt()?'feet':'metres')+' along the chosen side. The rest is one part.</div>';
   h+='<div id="spres">'+splitResHTML()+'</div>';
   h+='<div class="row" style="margin-top:8px"><button id="spIdeas">Ideas</button><button class="pri" id="spSave"'+(sp.res?'':' disabled')+'>Save parts</button><button id="spClose">Close</button></div></div>';
   return h;
@@ -1325,7 +1332,7 @@ function ideasSheet(){
   $('#sheet').onclick=function(e){
     var b=e.target.closest('.idea');if(!b)return;var it=ideas.filter(function(x){return x.id===b.dataset.id})[0];if(!it)return;
     var c=it.cfg;sp.dir=c.dir;sp.ref=c.ref;
-    if(c.widths){sp.kind='road';sp.vals.width=String(c.widths[0])}
+    if(c.widths){sp.kind='road';sp.vals.width=String(inFt()?Math.round(c.widths[0]*FT):c.widths[0])}
     else if(c.ratio){sp.kind='ratio';sp.vals.ratio=c.ratio.join(':')}
     else{sp.kind='equal';sp.nn=c.n||2}
     closeSheet();splitRecalc();mapBottom();scheduleDraw();
@@ -1408,6 +1415,11 @@ function render(){
   if(S.tab==='measure')renderMeasure();else if(S.tab==='map')renderMap();else if(S.tab==='plots')renderPlots();else renderMore();
   window.scrollTo(0,0);
 }
+document.addEventListener('click',function(e){
+  var b=e.target.closest&&e.target.closest('#app .big-num[data-cyc]');if(!b)return;
+  var order=['cent','acre','sqm','sqft'],i=order.indexOf(S.settings.unit);S.settings.unit=order[(i+1)%order.length];saveSettings();
+  var y=window.scrollY;render();window.scrollTo(0,y);
+});
 document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){leaveModes();S.tab=b.dataset.tab;S.viewId=null;M.view=null;render()}});
 
 function renderMeasure(){
@@ -1424,7 +1436,7 @@ function renderMeasure(){
       h+='<div><b>Capturing corner '+idx+'</b>. Stand still at the corner.</div><div class="bar"><i id="capbar"></i></div><div class="mut small" id="captxt">Starting…</div><div class="row" style="margin-top:12px"><button class="pri" id="bUse">Use now</button><button id="bCancel">Cancel</button></div>';
     }else{
       h+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark. Hold the phone steady in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving. Go around the plot in order. No GPS? Use the satellite map instead.</div>';
-      if(n){h+='<div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+c.acc.toFixed(1)+' m</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">Undo last</button><button id="bClear" class="danger">Start over</button></div>'}
+      if(n){h+='<div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">Undo last</button><button id="bClear" class="danger">Start over</button></div>'}
     }
   }else{
     if(S.walk){
@@ -1456,7 +1468,7 @@ function renderMeasure(){
   if(q('#bCancel'))q('#bCancel').onclick=cancelCapture;
   if(q('#bUndo'))q('#bUndo').onclick=function(){d.corners.pop();saveDraft();renderMeasure();gcPhotos()};
   if(q('#bClear'))q('#bClear').onclick=function(){choose('Start over?','All corners of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){d.corners=[];d.holes=[];d.tape=null;saveDraft();renderMeasure();gcPhotos()}})};
-  document.querySelectorAll('.corners button').forEach(function(b){b.onclick=function(){var i=+b.dataset.c;choose('Corner '+(i+1),(placed(d.corners[i])?'Placed without GPS, about ±':'Accuracy ±')+d.corners[i].acc.toFixed(1)+(placed(d.corners[i])?' m.':' m from '+d.corners[i].n+' readings.'),[{label:'Retake',val:'r',cls:'pri'},{label:'Delete',val:'d',cls:'danger'},{label:'Cancel',val:'c'}]).then(function(v){if(v==='r')startCapture(i);else if(v==='d'){d.corners.splice(i,1);saveDraft();renderMeasure();gcPhotos()}})}});
+  document.querySelectorAll('.corners button').forEach(function(b){b.onclick=function(){var i=+b.dataset.c;choose('Corner '+(i+1),(placed(d.corners[i])?'Placed without GPS, about ±':'Accuracy ±')+fl(d.corners[i].acc,1)+(placed(d.corners[i])?'.':' from '+d.corners[i].n+' readings.'),[{label:'Retake',val:'r',cls:'pri'},{label:'Delete',val:'d',cls:'danger'},{label:'Cancel',val:'c'}]).then(function(v){if(v==='r')startCapture(i);else if(v==='d'){d.corners.splice(i,1);saveDraft();renderMeasure();gcPhotos()}})}});
   if(q('#bWalk'))q('#bWalk').onclick=startWalk;
   if(q('#bWalkEnd'))q('#bWalkEnd').onclick=finishWalk;
   if(q('#bWalkCancel'))q('#bWalkCancel').onclick=cancelWalk;
@@ -1499,10 +1511,10 @@ function summary(p,an){
   var rc=p.rec&&recCmp(an.net,an.sig,p.rec);
   if(rc)t+='Record area: '+fa(p.rec.a,p.rec.u)+' '+UNIT[p.rec.u].l+'. Measured is '+(rc.pct>0?'+':'-')+Math.abs(rc.pct).toFixed(1)+'% ('+(rc.within?'within':'more than')+' the measuring error)\n';
   t+='Method: '+(an.meth==='map'?'traced on satellite map (no GPS)':an.meth==='tape'?'tape lengths':an.meth==='mixed'?'GPS + satellite map':'phone GPS')+'\n';
-  t+='Kerala style: '+k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m2\nPerimeter: '+an.per.toFixed(1)+' m\nEstimated error: +/-'+an.sig.toFixed(1)+' sq m ('+(an.rel*100).toFixed(1)+'%)\n';
+  t+='Kerala style: '+k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m2\nPerimeter: '+fl(an.per,1)+'\nEstimated error: +/-'+an.sig.toFixed(1)+' sq m ('+(an.rel*100).toFixed(1)+'%)\n';
   if(an.ngps>0&&an.slope&&an.slope.ok)t+=an.slope.detectable?('Slope: about '+an.slope.slopeDeg.toFixed(0)+' deg, downhill '+compass8(an.slope.aspect)+'; area along the slope '+fa(an.surface,'cent')+' cent\n'):('Slope: none detected (under ~'+Math.round(an.slope.limitDeg)+' deg)\n');
   if(p.notes)t+='Notes: '+p.notes+'\n';
-  t+='Corners (lat, lon, accuracy):\n'+p.corners.map(function(c,i){return(i+1)+': '+c.lat.toFixed(7)+', '+c.lon.toFixed(7)+' ('+srcLabel(c).replace(' ',', ')+'+/-'+c.acc.toFixed(1)+' m)'+(c.note?' - '+c.note:'')}).join('\n');
+  t+='Corners (lat, lon, accuracy):\n'+p.corners.map(function(c,i){return(i+1)+': '+c.lat.toFixed(7)+', '+c.lon.toFixed(7)+' ('+srcLabel(c).replace(' ',', ')+'+/-'+fl(c.acc,1)+')'+(c.note?' - '+c.note:'')}).join('\n');
   return t;
 }
 function geojson(plots){
@@ -1526,17 +1538,17 @@ function planCanvas(p,an,pw,ph){
   if(Q.length<=14){
     x.font='700 26px '+F;x.textAlign='center';x.lineWidth=7;x.strokeStyle='#fff';x.fillStyle='#16211a';
     Q.forEach(function(a,i){var b=Q[(i+1)%Q.length],ang=Math.atan2(b.y-a.y,b.x-a.x);if(ang>Math.PI/2)ang-=Math.PI;else if(ang<-Math.PI/2)ang+=Math.PI;
-      x.save();x.translate((a.x+b.x)/2,(a.y+b.y)/2);x.rotate(ang);var t=num(an.sides[i],1)+' m';x.strokeText(t,0,-14);x.fillText(t,0,-14);x.restore()});
+      x.save();x.translate((a.x+b.x)/2,(a.y+b.y)/2);x.rotate(ang);var t=fl(an.sides[i],1);x.strokeText(t,0,-14);x.fillText(t,0,-14);x.restore()});
     Q.forEach(function(q,i){x.beginPath();x.arc(q.x,q.y,21,0,7);x.fillStyle='#1f7a4d';x.fill();x.lineWidth=3;x.strokeStyle='#fff';x.stroke();x.fillStyle='#fff';x.font='700 24px '+F;x.fillText(String(i+1),q.x,q.y+8)});
   }
   x.textAlign='center';x.fillStyle='#5d6b61';x.font='700 30px '+F;x.fillText('N',bx+bw-50,by+48);x.beginPath();x.moveTo(bx+bw-50,by+60);x.lineTo(bx+bw-50,by+120);x.moveTo(bx+bw-50,by+60);x.lineTo(bx+bw-62,by+80);x.moveTo(bx+bw-50,by+60);x.lineTo(bx+bw-38,by+80);x.lineWidth=4;x.strokeStyle='#5d6b61';x.stroke();
-  var steps=[1,2,5,10,20,50,100,200,500],L=steps[0];steps.forEach(function(v){if(v*f.sc<=bw*0.3)L=v});
-  var sx=bx+40,sy=by+bh-46,sl=L*f.sc;x.beginPath();x.moveTo(sx,sy-12);x.lineTo(sx,sy);x.lineTo(sx+sl,sy);x.lineTo(sx+sl,sy-12);x.lineWidth=4;x.strokeStyle='#16211a';x.stroke();x.textAlign='left';x.font='700 24px '+F;x.fillStyle='#16211a';x.fillText(L+' m',sx,sy+30);
+  var kk=inFt()?FT:1,steps=[1,2,5,10,20,50,100,200,500,1000],L=steps[0];steps.forEach(function(v){if(v/kk*f.sc<=bw*0.3)L=v});
+  var sx=bx+40,sy=by+bh-46,sl=L/kk*f.sc;x.beginPath();x.moveTo(sx,sy-12);x.lineTo(sx,sy);x.lineTo(sx+sl,sy);x.lineTo(sx+sl,sy-12);x.lineWidth=4;x.strokeStyle='#16211a';x.stroke();x.textAlign='left';x.font='700 24px '+F;x.fillStyle='#16211a';x.fillText(L+' '+lu(),sx,sy+30);
   x.textAlign='left';var y=by+bh+84;
   x.font='800 80px '+F;x.fillStyle='#16211a';x.fillText(fa(an.net,u)+' '+UNIT[u].l,m,y);
   x.font='30px '+F;x.fillStyle='#5d6b61';var k=haAre(an.net);y+=52;
   x.fillText(['cent','acre','sqm','sqft'].filter(function(v){return v!==u}).map(function(v){return fa(an.net,v)+' '+UNIT[v].l}).join('   ·   '),m,y);
-  y+=44;x.fillText(k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m²   ·   Perimeter '+num(an.per,1)+' m',m,y);
+  y+=44;x.fillText(k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m²   ·   Perimeter '+fl(an.per,1),m,y);
   if(an.holeArea>0){y+=44;x.fillText('Plot '+fa(an.area,u)+' − excluded '+fa(an.holeArea,u)+' '+UNIT[u].l+' (house, pond …)',m,y)}
   y+=44;x.fillText('Typical error ±'+num(an.rel*100,1)+'%   ·   '+methLabel(an.meth),m,y);
   var rc=p.rec&&recCmp(an.net,an.sig,p.rec);
@@ -1557,7 +1569,7 @@ function renderDetail(p){
   var an=anOf(p,p.mode||'corners'),u=S.settings.unit;
   var h='<button id="bBack" style="margin-bottom:10px">&larr; All plots</button><div class="card"><div style="font-size:20px;font-weight:700">'+esc(p.name)+'</div><div class="mut small">'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'<div style="margin-top:10px">'+resultHTML(an,p.mode,false,p)+'</div></div>';
   if(p.tape&&p.tape.sides)h+='<div class="card"><h2>Tape lengths</h2><div class="small">Sides: '+p.tape.sides.map(function(v,i){return(i+1)+'→'+((i+1)%p.tape.sides.length+1)+' <b>'+esc(v)+'</b>'}).join(' · ')+(p.tape.diags&&p.tape.diags.length?'<br>Diagonals: '+p.tape.diags.map(function(v,i){return'1→'+(i+3)+' <b>'+esc(v)+'</b>'}).join(' · '):'')+' ('+(p.tape.u==='ft'?'feet':'metres')+')</div></div>';
-  h+='<div class="card"><h2>Corners</h2><table>'+p.corners.map(function(c,i){return'<tr><td>'+(i+1)+'</td><td style="font-weight:400;font-size:13px">'+c.lat.toFixed(6)+', '+c.lon.toFixed(6)+' · '+srcLabel(c)+'±'+c.acc.toFixed(1)+' m'+(c.note?'<div style="font-weight:600;margin-top:2px">'+esc(c.note)+'</div>':'')+(c.ph&&c.ph.length?'<div class="thumbs" data-ph="'+i+'"></div>':'')+'</td></tr>'}).join('')+'</table></div>';
+  h+='<div class="card"><h2>Corners</h2><table>'+p.corners.map(function(c,i){return'<tr><td>'+(i+1)+'</td><td style="font-weight:400;font-size:13px">'+c.lat.toFixed(6)+', '+c.lon.toFixed(6)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+(c.note?'<div style="font-weight:600;margin-top:2px">'+esc(c.note)+'</div>':'')+(c.ph&&c.ph.length?'<div class="thumbs" data-ph="'+i+'"></div>':'')+'</td></tr>'}).join('')+'</table></div>';
   if(an.H.length)h+='<div class="card"><h2>Excluded areas</h2><table>'+an.H.map(function(H,i){return'<tr><td>Area '+(i+1)+'</td><td>'+fa(shoelace(H),u)+' '+UNIT[u].l+'</td></tr>'}).join('')+'</table></div>';
   h+='<button class="pri" id="bMap" style="width:100%;margin-bottom:8px">&#128752;&#65039; View on satellite map</button>';
   h+='<div class="row"><button id="bSplit">&#9986; Split</button><button id="bRec">&#128203; Record area</button></div>';
@@ -1585,8 +1597,9 @@ function renderMore(){
   var st=S.settings;
   var opt=function(vals,cur,lab){return vals.map(function(v){return'<option value="'+v+'"'+(String(cur)===String(v)?' selected':'')+'>'+(lab?lab(v):v)+'</option>'}).join('')};
   var h='<div class="card"><h2>Settings</h2><label>Averaging time per corner</label><select id="sDur">'+opt([15,30,45,60,90],st.dur,function(v){return v+' seconds'})+'</select>';
-  h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+v+' m'})+'</select>';
-  h+='<label>Main area unit</label><select id="sUnit"><option value="cent"'+(st.unit==='cent'?' selected':'')+'>cent</option><option value="acre"'+(st.unit==='acre'?' selected':'')+'>acre</option><option value="sqm"'+(st.unit==='sqm'?' selected':'')+'>sq m</option><option value="sqft"'+(st.unit==='sqft'?' selected':'')+'>sq ft</option></select></div>';
+  h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+fl(v,0)})+'</select>';
+  h+='<label>Main area unit</label><select id="sUnit"><option value="cent"'+(st.unit==='cent'?' selected':'')+'>cent</option><option value="acre"'+(st.unit==='acre'?' selected':'')+'>acre</option><option value="sqm"'+(st.unit==='sqm'?' selected':'')+'>sq m</option><option value="sqft"'+(st.unit==='sqft'?' selected':'')+'>sq ft</option></select>';
+  h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select></div>';
   h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. Take a backup now and then.</div><div class="row" style="margin-top:10px"><button id="bExp" class="pri">Export all</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
   h+='<div class="card"><h2>How accurate is this?</h2><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></div>';
   h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></div>';
@@ -1597,6 +1610,7 @@ function renderMore(){
   $('#sDur').onchange=function(){st.dur=+this.value;saveSettings()};
   $('#sAcc').onchange=function(){st.maxAcc=+this.value;saveSettings()};
   $('#sUnit').onchange=function(){st.unit=this.value;saveSettings()};
+  $('#sLU').onchange=function(){st.lunit=this.value;saveSettings();renderMore()};
   $('#bExp').onclick=function(){var pl=clone(S.plots);pl.forEach(function(p){allRings(p).forEach(function(r){r.forEach(function(c){delete c.ph})})});share('Land Measure backup',JSON.stringify({app:'land-measure',v:2,exported:Date.now(),plots:pl},null,1),'land-measure-backup.json','application/json')};
   $('#bGeoAll').onclick=function(){if(!S.plots.length){toast('No plots yet');return}share('Land plots GeoJSON',geojson(S.plots),'land-plots.geojson','application/geo+json')};
   $('#bKmlAll').onclick=function(){if(!S.plots.length){toast('No plots yet');return}share('Land plots KML',kmlOf(S.plots),'land-plots.kml','application/vnd.google-earth.kml+xml')};
