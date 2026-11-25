@@ -1,6 +1,6 @@
 // Network-first service worker: always tries to fetch the newest page, falls back to the saved copy when offline (e.g. in the field).
 // Map pictures and place search come from other websites; they are not handled here and go straight to the network.
-const CACHE = 'land-measure-v4';
+const CACHE = 'land-measure-v5';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])).then(() => self.skipWaiting()));
 });
