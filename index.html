@@ -604,8 +604,8 @@ var TILE_B='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/M
 var TILE_L='https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 var MAXNAT=19,MAXZ=21,MINZ=3,KM='lm.map.v1';
 var MS=Object.assign({lat:11.05,lon:76.07,zoom:12,fill:0.12,labels:true,sides:true,saved:true,add:'tap',loupe:true},load(KM,{}));
-var M={W:0,H:0,dpr:1,cv:null,cx:null,ptrs:{},g:null,raf:0,sel:-1,view:null,inited:false,refit:false,follow:false,pop:null,sres:[],lastPanel:'',lastScale:'',saveT:null,tileErr:0,ring:-1,split:null,mv:false,loupe:null};
-var TC={},TCK=[];
+var M={W:0,H:0,dpr:1,cv:null,cx:null,ptrs:{},g:null,raf:0,sel:-1,view:null,inited:false,refit:false,follow:false,pop:null,sres:[],lastPanel:'',lastScale:'',saveT:null,tileErr:0,naFlag:0,cors:'',corsFb:0,ring:-1,split:null,mv:false,loupe:null};
+var TC={},TCK=[],ATTR='Tiles &copy; Esri. Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
 
 function mX(lon,z){return(lon+180)/360*256*Math.pow(2,z)}
 function mY(lat,z){var s=Math.sin(Math.max(-85,Math.min(85,lat))*DEG);return(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*256*Math.pow(2,z)}
@@ -624,31 +624,56 @@ function scheduleDraw(){if(!M.raf&&M.cv)M.raf=requestAnimationFrame(mapDraw)}
 
 // tiles
 function peekTile(layer,z,x,y){var n=Math.pow(2,z);x=((x%n)+n)%n;var t=TC[layer+z+'/'+x+'/'+y];return t&&t.ok?t.img:null}
+// Esri sends a grey "Map data not yet available" picture (not an error) where it has no sharp imagery. Spot it and use a lower zoom instead.
+var DCV=null;
+function isPlaceholder(img){
+  try{
+    if(!DCV){DCV=document.createElement('canvas');DCV.width=DCV.height=24}
+    var c=DCV.getContext('2d',{willReadFrequently:true});c.drawImage(img,0,0,24,24);
+    var d=c.getImageData(0,0,24,24).data,N=576,gray=0,sr=0,sr2=0;
+    for(var i=0;i<d.length;i+=4){var r=d[i],g=d[i+1],b=d[i+2];sr+=r;sr2+=r*r;if(Math.abs(r-g)<7&&Math.abs(g-b)<7&&r>170&&r<245)gray++}
+    var mean=sr/N,sd=Math.sqrt(Math.max(0,sr2/N-mean*mean));
+    return gray/N>0.85&&sd<16;
+  }catch(e){return false}
+}
+function naTile(layer,z,x,y){var n=Math.pow(2,z);x=((x%n)+n)%n;var t=TC[layer+z+'/'+x+'/'+y];return!!(t&&t.na)}
 function getTile(layer,z,x,y){
   var n=Math.pow(2,z);x=((x%n)+n)%n;if(y<0||y>=n)return null;
   var key=layer+z+'/'+x+'/'+y,t=TC[key];
-  if(t){if(t.ok)return t.img;if(!t.err||Date.now()-t.err<8000)return null;delete TC[key]}
-  var img=new Image();t=TC[key]={img:img,ok:false,err:0};
-  img.onload=function(){t.ok=true;M.tileErr=0;scheduleDraw()};
-  img.onerror=function(){t.err=Date.now();M.tileErr++;scheduleDraw()};
-  img.src=(layer==='L'?TILE_L:TILE_B).replace('{z}',z).replace('{x}',x).replace('{y}',y);
+  if(t){if(t.ok)return t.img;if(t.na||!t.err||Date.now()-t.err<8000)return null;delete TC[key]}
+  var img=new Image(),useCors=layer==='B'&&M.cors!=='no',url=(layer==='L'?TILE_L:TILE_B).replace('{z}',z).replace('{x}',x).replace('{y}',y);
+  t=TC[key]={img:img,ok:false,err:0,na:false};
+  if(useCors)img.crossOrigin='anonymous';
+  img.onload=function(){if(useCors&&isPlaceholder(img))t.na=true;else t.ok=true;M.tileErr=0;scheduleDraw()};
+  img.onerror=function(){
+    if(useCors&&!t.retried){ // maybe the server does not allow reading the picture: show it anyway, without the missing-picture check
+      t.retried=true;var im2=new Image();t.img=im2;
+      im2.onload=function(){t.ok=true;M.tileErr=0;M.corsFb=(M.corsFb||0)+1;if(M.corsFb>=2)M.cors='no';scheduleDraw()};
+      im2.onerror=function(){t.err=Date.now();M.tileErr++;scheduleDraw()};
+      im2.src=url;return;
+    }
+    t.err=Date.now();M.tileErr++;scheduleDraw();
+  };
+  img.src=url;
   TCK.push(key);if(TCK.length>600){TCK.splice(0,150).forEach(function(k){delete TC[k]})}
   return null;
 }
 function drawTiles(ctx,layer){
-  var z=MS.zoom,tz=Math.min(MAXNAT,Math.max(0,Math.ceil(z-0.25))),ts=256*Math.pow(2,z-tz);
+  var z=MS.zoom,cap=Math.min(MAXNAT,MS.nat||MAXNAT),tz=Math.min(cap,Math.max(0,Math.ceil(z-0.25))),ts=256*Math.pow(2,z-tz);
   var ox=mX(MS.lon,z)-M.W/2,oy=mY(MS.lat,z)-M.H/2;
-  var x0=Math.floor(ox/ts),x1=Math.floor((ox+M.W)/ts),y0=Math.floor(oy/ts),y1=Math.floor((oy+M.H)/ts),got=0,want=0;
+  var x0=Math.floor(ox/ts),x1=Math.floor((ox+M.W)/ts),y0=Math.floor(oy/ts),y1=Math.floor((oy+M.H)/ts),got=0,want=0,na=0;
   for(var ty=y0;ty<=y1;ty++)for(var tx=x0;tx<=x1;tx++){
     var dx=Math.floor(tx*ts-ox),dy=Math.floor(ty*ts-oy),w=Math.ceil((tx+1)*ts-ox)-dx,h=Math.ceil((ty+1)*ts-oy)-dy;
     var img=getTile(layer,tz,tx,ty);want++;
     if(img){ctx.drawImage(img,dx,dy,w,h);got++}
     else if(layer==='B'){
-      for(var d=1;d<=5&&tz-d>=0;d++){var k=Math.pow(2,d),px=Math.floor(tx/k),py=Math.floor(ty/k),pi=peekTile(layer,tz-d,px,py);
-        if(pi){var sw=256/k;ctx.drawImage(pi,(tx-px*k)*sw,(ty-py*k)*sw,sw,sw,dx,dy,w,h);break}}
+      var wasNa=naTile(layer,tz,tx,ty);if(wasNa)na++;
+      for(var d=1;d<=7&&tz-d>=0;d++){var k=Math.pow(2,d),px=Math.floor(tx/k),py=Math.floor(ty/k),pi=wasNa?getTile(layer,tz-d,px,py):peekTile(layer,tz-d,px,py);
+        if(pi){var sw=256/k;ctx.drawImage(pi,(tx-px*k)*sw,(ty-py*k)*sw,sw,sw,dx,dy,w,h);if(wasNa)got++;break}
+        if(wasNa&&!naTile(layer,tz-d,px,py))break;}
     }
   }
-  return{got:got,want:want};
+  return{got:got,want:want,na:na};
 }
 
 // drawing
@@ -663,6 +688,7 @@ function mapDraw(){
   ctx.fillStyle='#26302a';ctx.fillRect(0,0,W,H);
   var tl=drawTiles(ctx,'B');
   if(MS.labels&&MS.zoom<17.5)drawTiles(ctx,'L');
+  var nf=tl.na>0?1:0;if(nf!==M.naFlag){M.naFlag=nf;var at=$('#mattr');if(at)at.innerHTML=(nf?'<b>Sharper pictures are not available here. Showing the best available.</b><br>':'')+ATTR}
   if(tl.got===0&&M.tileErr>2){ctx.fillStyle='rgba(255,255,255,.85)';ctx.font='600 14px -apple-system,sans-serif';ctx.textAlign='center';ctx.fillText('Map pictures are not loading. Check the internet.',W/2,H/2);ctx.textAlign='start'}
   var o=cobj(),C=o.corners,mode=o.mode||'corners',res=mpp(MS.lat,MS.zoom),hs=o.holes||[];
   if(MS.saved)drawSaved(ctx);
@@ -965,16 +991,18 @@ function openPop(kind){
       +'<label class="ck"><input type="checkbox" id="mSide"'+(MS.sides?' checked':'')+'>Side lengths</label>'
       +'<label class="ck"><input type="checkbox" id="mSaved"'+(MS.saved?' checked':'')+'>Show saved plots</label>'
       +'<label class="ck"><input type="checkbox" id="mLab"'+(MS.labels?' checked':'')+'>Place names (zoomed out)</label>'
+      +'<div class="pt"><span>Sharpest picture level</span></div><select id="mNat"><option value="0"'+(!MS.nat?' selected':'')+'>Auto (best available)</option>'+[19,18,17,16].map(function(v){return'<option value="'+v+'"'+(MS.nat===v?' selected':'')+'>Up to level '+v+'</option>'}).join('')+'</select>'
       +'<label class="ck"><input type="checkbox" id="mLoupe"'+(MS.loupe!==false?' checked':'')+'>Magnifier when dragging a point</label>'
       +'<div class="pt">Add points by</div><div class="seg2"><button data-add="tap" class="'+(MS.add==='tap'?'on':'')+'">Tap on map</button><button data-add="centre" class="'+(MS.add==='centre'?'on':'')+'">Centre pin</button></div>'
       +(M.view?'':'<button class="danger" id="mClear">Remove all points</button>')
-      +'<div class="small">If a tile says &ldquo;Map data not yet available&rdquo;, zoom out one step.</div>';
+      +'<div class="small">Where Esri has no sharp picture, the app shows the best lower level automatically. If a grey &ldquo;Map data not yet available&rdquo; tile still shows, set the sharpest level to a lower number.</div>';
     $('#mFill').oninput=function(){MS.fill=(+this.value)/100;$('#fillv').textContent=this.value+'%';scheduleDraw()};
     $('#mFill').onchange=saveView;
     $('#mSide').onchange=function(){MS.sides=this.checked;scheduleDraw();saveView()};
     $('#mSaved').onchange=function(){MS.saved=this.checked;scheduleDraw();saveView()};
     $('#mLab').onchange=function(){MS.labels=this.checked;scheduleDraw();saveView()};
     $('#mLoupe').onchange=function(){MS.loupe=this.checked;saveView()};
+    $('#mNat').onchange=function(){MS.nat=+this.value||0;saveView();scheduleDraw()};
     el.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){MS.add=b.dataset.add;M.lastPanel='';saveView();el.querySelectorAll('[data-add]').forEach(function(x){x.classList.toggle('on',x===b)});mapBottom();scheduleDraw()}});
     if($('#mClear'))$('#mClear').onclick=function(){closePop();if(!S.draft.corners.length){toast('No points yet');return}choose('Remove all points?','All points of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){S.draft.corners=[];S.draft.holes=[];S.draft.tape=null;M.sel=-1;M.ring=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()}})};
   }
@@ -1284,7 +1312,7 @@ function renderMap(){
   if(M.ring>=0&&(M.view||!S.draft.holes[M.ring]))M.ring=-1;
   $('#app').innerHTML='<div id="mapwrap"><canvas id="mapc"></canvas><div id="mpanel"></div>'
     +'<div id="mctl"><button class="mc" id="mZi" aria-label="Zoom in">&#65291;</button><button class="mc" id="mZo" aria-label="Zoom out">&#65293;</button><button class="mc" id="mLoc" aria-label="My location">&#9678;</button><button class="mc" id="mFit" aria-label="Fit plot">&#10530;</button><button class="mc" id="mSrch" aria-label="Search place">&#128269;</button><button class="mc" id="mLay" aria-label="Map options">&#9776;</button></div>'
-    +'<div id="mpop"></div><div id="mbot"><div id="minfo"><div id="msc"><i></i><span></span></div><div id="mattr">Tiles &copy; Esri. Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community</div></div><div id="mtb"></div></div></div>';
+    +'<div id="mpop"></div><div id="mbot"><div id="minfo"><div id="msc"><i></i><span></span></div><div id="mattr">'+(M.naFlag?'<b>Sharper pictures are not available here. Showing the best available.</b><br>':'')+ATTR+'</div></div><div id="mtb"></div></div></div>';
   M.cv=$('#mapc');M.cx=M.cv.getContext('2d');M.lastPanel='';M.lastScale='';M.ptrs={};M.g=null;M.pop=null;M.loupe=null;
   layoutMap();
   var cv=M.cv;
@@ -1491,7 +1519,7 @@ function renderMore(){
   h+='<label>Main area unit</label><select id="sUnit"><option value="cent"'+(st.unit==='cent'?' selected':'')+'>cent</option><option value="acre"'+(st.unit==='acre'?' selected':'')+'>acre</option><option value="sqm"'+(st.unit==='sqm'?' selected':'')+'>sq m</option><option value="sqft"'+(st.unit==='sqft'?' selected':'')+'>sq ft</option></select></div>';
   h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. Take a backup now and then.</div><div class="row" style="margin-top:10px"><button id="bExp" class="pri">Export all</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
   h+='<div class="card"><h2>How accurate is this?</h2><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></div>';
-  h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>If a tile says &ldquo;Map data not yet available&rdquo;, zoom out one step.</li></ul></div>';
+  h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></div>';
   h+='<div class="card"><h2>More tools (Map tab &rarr; Tools)</h2><ul class="tips small"><li><b>Split:</b> divide a plot into equal parts, by ratio, by cents, or with a road strip. Ideas are shown as small pictures. Save the parts as separate plots.</li><li><b>Exclude an area:</b> mark a house or pond. Its area is taken out and the net area is shown.</li><li><b>Record area:</b> type the area from the deed or Ente Bhoomi to see the difference in %.</li><li><b>Tape lengths:</b> type the side lengths (and diagonals) and the app draws the plot and works out the area. A tape is far more exact than GPS for small plots.</li><li><b>Magnifier:</b> when you drag a point, a round magnifier shows the spot above your finger.</li><li><b>Point notes and photos:</b> tap a point to add a note or a photo.</li><li>On a saved plot you can make a <b>plan PDF</b>, a picture, or a <b>KML</b> file for Google Earth.</li></ul></div>';
   h+='<div class="card"><h2>Tips for best results</h2><ul class="tips small"><li>Stand in the open, away from trees, walls and vehicles.</li><li>Wait until the GPS chip at the top shows green or amber before you capture.</li><li>Take all corners in one session, within about 15 minutes. Common GPS errors then cancel out in the area.</li><li>Take corners in order around the plot (clockwise or anticlockwise).</li><li>Keep the phone steady and the screen on. The app asks the phone to stay awake.</li><li>Measure again on another day or time of day and compare. If the two areas differ, trust neither fully.</li></ul></div>';
   h+='<div class="card"><h2>Install on iPhone</h2><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></div>';

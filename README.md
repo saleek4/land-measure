@@ -3,7 +3,7 @@
 Personal iPhone web app (PWA) to measure land plot areas with the phone only.
 
 - **GPS corners / walk boundary**: averages GPS readings per corner, skips readings while the phone moves, estimates slope from GPS height.
-- **Satellite map tab**: tap or drag points on Esri World Imagery to estimate an area without GPS. Distances, perimeter and area show at the top, and the area fill is transparent (adjustable) so the imagery stays visible.
+- **Satellite map tab**: tap or drag points on Esri World Imagery to estimate an area without GPS. Distances, perimeter and area show at the top, and the area fill is transparent (adjustable) so the imagery stays visible. Where Esri has no sharp picture (grey "Map data not yet available" tiles), the app shows the best lower-zoom imagery instead; the sharpest level can also be set by hand in the map options.
 - **Split a plot** (Map tab > Tools, or Split on a saved plot): ready-made ideas shown as pictures (2 equal parts, 3 strips, from a corner, keep a quarter, 3 m road). Live controls for side/corner, equal parts, ratio, cents, road strip. Parts are drawn in colour on the map and can be saved as separate plots.
 - **Exclude areas** (house, pond): taken out of the area, net area shown.
 - **Record area**: type the deed / Ente Bhoomi area and see the difference in % against the measuring error.
