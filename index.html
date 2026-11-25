@@ -429,7 +429,7 @@ function quality(rel){return rel<=0.01?{t:'Good',c:'good',d:'about ±1% or bette
 var toastT=null;
 function toast(m){var t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toastT);toastT=setTimeout(function(){t.style.display='none'},2800)}
 function sheet(html){$('#sheet').innerHTML=html;$('#ov').classList.add('on')}
-function closeSheet(){$('#ov').classList.remove('on');$('#sheet').innerHTML=''}
+function closeSheet(){var f=typeof M!=='undefined'&&M&&M.fit;if(f)M.fit=null;$('#ov').classList.remove('on');$('#sheet').innerHTML='';if(f&&typeof scheduleDraw==='function')scheduleDraw()}
 $('#ov').addEventListener('click',function(e){if(e.target===this)closeSheet()});
 function choose(title,msg,opts){return new Promise(function(res){
   sheet('<h3>'+esc(title)+'</h3><div class="mut">'+msg+'</div><div class="row">'+opts.map(function(o,i){return'<button data-i="'+i+'" class="'+(o.cls||'')+'">'+esc(o.label)+'</button>'}).join('')+'</div>');
@@ -773,6 +773,12 @@ function mapDraw(){
     ctx.lineWidth=6;ctx.strokeStyle='rgba(0,0,0,.5)';ctx.stroke();ctx.lineWidth=3;ctx.strokeStyle='#ffd23f';ctx.stroke();
     ctx.setLineDash([6,6]);ctx.beginPath();ctx.moveTo(dq[dq.length-1].x,dq[dq.length-1].y);ctx.lineTo(dq[0].x,dq[0].y);ctx.lineWidth=2;ctx.strokeStyle='rgba(255,210,63,.85)';ctx.stroke();ctx.restore();
   }
+  if(M.fit){
+    var fp=toScr(M.fit.lat,M.fit.lon),fc=act()[M.fit.i];
+    if(fc){var fo=toScr(fc.lat,fc.lon);ctx.save();ctx.setLineDash([7,6]);ctx.lineWidth=3;ctx.strokeStyle='#ff9a3c';ctx.beginPath();ctx.moveTo(fo.x,fo.y);ctx.lineTo(fp.x,fp.y);ctx.stroke();ctx.setLineDash([]);
+      ctx.beginPath();ctx.arc(fp.x,fp.y,12,0,7);ctx.fillStyle='rgba(255,154,60,.35)';ctx.fill();ctx.lineWidth=3;ctx.strokeStyle='#ff9a3c';ctx.stroke();
+      ctx.font='700 12px -apple-system,Helvetica,Arial,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';ctx.strokeStyle='rgba(0,0,0,.7)';ctx.lineWidth=3;ctx.strokeText(String(M.fit.i+1),fp.x,fp.y+.5);ctx.fillText(String(M.fit.i+1),fp.x,fp.y+.5);ctx.restore()}
+  }
   if(M.loupe)drawLoupe(ctx);
   mapPanel(C,mode,an,o);mapScale(res);
 }
@@ -974,7 +980,7 @@ function gcPhotos(){
 }
 function selectVertex(i){
   var A=act(),c=A[i];if(!c)return;
-  var d=c.src==='tape'?'From tape lengths.':c.src==='cut'?'Corner made by a split cut.':placed(c)?'Placed on the satellite map, about ±'+fl(c.acc,1)+'.':'GPS point, ±'+fl(c.acc,1)+' from '+c.n+' readings.';
+  var d=c.src==='tape'?'From tape lengths.':c.src==='cut'?(c.fit?'Corner set so the area matches the wanted area.':'Corner made by a split cut.'):placed(c)?'Placed on the satellite map, about ±'+fl(c.acc,1)+'.':'GPS point, ±'+fl(c.acc,1)+' from '+c.n+' readings.';
   sheet('<h3>'+(M.ring>=0?'Excluded area · ':'')+'Point '+(i+1)+'</h3><div class="mut small">'+d+' Drag the point to move it.</div><label>Note (boundary stone, well, tree …)</label><input id="vN" value="'+esc(c.note||'')+'" maxlength="160" autocomplete="off"><div class="thumbs" id="vTh"></div><div class="row"><button id="vPh">&#128247; Add photo</button></div><input type="file" id="vF" accept="image/*" style="display:none"><div class="row"><button class="pri" id="vOk">Done</button><button class="danger" id="vDel">Delete point</button></div>');
   var th=function(){thumbsInto($('#vTh'),c.ph,function(id){c.ph=c.ph.filter(function(x){return x!==id});if(!c.ph.length)delete c.ph;saveDraft();th();scheduleDraw();gcPhotos()})};th();
   $('#vN').oninput=function(){var v=this.value.trim();if(v)c.note=v;else delete c.note;saveDraft();scheduleDraw()};
@@ -1141,7 +1147,7 @@ function mapBottom(){
   if(q('#mCan'))q('#mCan').onclick=cancelCapture;
   if(q('#mWEnd'))q('#mWEnd').onclick=finishWalk;
   if(q('#mWCan'))q('#mWCan').onclick=cancelWalk;
-  if(q('#mUndo'))q('#mUndo').onclick=function(){var A=act();if(M.undoDraw&&M.undoDraw.arr===A&&A.length===M.undoDraw.len){A.splice.apply(A,[0,A.length].concat(M.undoDraw.prev));M.undoDraw=null}else A.pop();M.sel=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()};
+  if(q('#mUndo'))q('#mUndo').onclick=function(){var A=act();var uf=M.undoFit;if(uf&&uf.arr===A&&A[uf.i]&&A[uf.i].lat===uf.lat&&A[uf.i].lon===uf.lon){A[uf.i]=uf.prev;M.undoFit=null;M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();return}if(M.undoDraw&&M.undoDraw.arr===A&&A.length===M.undoDraw.len){A.splice.apply(A,[0,A.length].concat(M.undoDraw.prev));M.undoDraw=null}else A.pop();M.sel=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()};
   if(q('#mDraw'))q('#mDraw').onclick=function(){MS.add=MS.add==='draw'?'tap':'draw';M.lastPanel='';saveView();if(MS.add==='draw')toast('Draw the outline with one finger. Two fingers move or zoom the map.');mapBottom();scheduleDraw()};
   if(q('#mAdd'))q('#mAdd').onclick=function(){addMapPoint({lat:MS.lat,lon:MS.lon})};
   if(q('#mGps'))q('#mGps').onclick=function(){
@@ -1180,6 +1186,7 @@ function toolsSheet(){
     +'<button id="tHole"'+(ok?'':' disabled')+'>&#10134; Exclude an area<small>Mark a house, pond or road inside the plot and take it out of the area.</small></button>'
     +(hs.length?'<button id="tHoles">Excluded areas ('+hs.length+')<small>Edit or remove</small></button>':'')
     +'<button id="tRec"'+(ok?'':' disabled')+'>&#128203; Record area<small>'+(o.rec?'Record: '+fa(o.rec.a,o.rec.u)+' '+UNIT[o.rec.u].l+'. Tap to change.':'Type the area from the deed or Ente Bhoomi and compare it with this measurement.')+'</small></button>'
+    +'<button id="tFit"'+(ok?'':' disabled')+'>&#127919; Fit a corner to an area<small>Type the area you want. The app shows where one corner must stand so the plot comes to exactly that.</small></button>'
     +'<button id="tTape">&#128208; Enter tape lengths<small>Type the side lengths measured with a tape. The plot is drawn from them.</small></button>'
     +'<button id="tMove"'+(ok?'':' disabled')+'>&#10021; Move or turn the plot<small>For a plot drawn from tape lengths: slide it onto the right place and turn it.</small></button>'
     +'</div><div class="row"><button id="tClose">Close</button></div>');
@@ -1189,11 +1196,65 @@ function toolsSheet(){
   q('#tHole').onclick=function(){closeSheet();startHole()};
   if(q('#tHoles'))q('#tHoles').onclick=holesSheet;
   q('#tRec').onclick=function(){recSheet(o,function(){M.lastPanel='';scheduleDraw();mapBottom()})};
+  q('#tFit').onclick=function(){fitSheet(o,function(){})};
   q('#tTape').onclick=function(){tapeSheet()};
   q('#tMove').onclick=function(){
     if(!canMoveAll(o)){toast('Move works for plots from tape lengths or map points. GPS points would lose their position');return}
     closeSheet();M.mv=true;M.lastPanel='';mapBottom();scheduleDraw();
   };
+}
+
+// ---------- fit a corner to a wanted area ----------
+// Moving one corner along a straight fence line changes the area in a straight (linear) way, so the place that gives the wanted area is exact.
+function fitCalc(o,i,dir,Tm2){
+  var C=o.corners,n=C.length,P=toXY(C,C[0].lat,C[0].lon),cur=P[i],ri=dir==='prev'?(i+n-1)%n:(i+1)%n,ref=P[ri];
+  var dx=cur.x-ref.x,dy=cur.y-ref.y,L=Math.hypot(dx,dy);
+  if(L<0.05)return{err:'These two points are on the same spot.'};
+  var ux=dx/L,uy=dy/L,an0=anOf(o,'corners'),hole=an0.holeArea||0;
+  var Sg=function(t){var Q=P.slice();Q[i]={x:cur.x+ux*t,y:cur.y+uy*t};return polyArea(Q)};
+  var S0=Sg(0),k=Sg(1)-S0,sg=S0>=0?1:-1;
+  if(Math.abs(k)<1e-6)return{err:'Sliding this corner along that side does not change the area. Try the other side or another corner.'};
+  var t=(sg*(Tm2+hole)-S0)/k,newL=L+t;
+  if(newL<0.5)return{err:'That area is too small for this corner. Try a bigger area, the other side or another corner.'};
+  var q=fromXY(cur.x+ux*t,cur.y+uy*t,C[0].lat,C[0].lon),test=clone(C);test[i].lat=q.lat;test[i].lon=q.lon;
+  var an1=analyze(test,'corners',holesOf(o));
+  return{t:t,L:L,newL:newL,lat:q.lat,lon:q.lon,ri:ri,now:an0.net,after:an1?an1.net:null,cross:!!(an1&&an1.cross)};
+}
+function fitSheet(o,after){
+  var C=o.corners,n=C.length,u=(o.rec&&o.rec.u)||S.settings.unit,v=o.rec?UNIT[u].f(o.rec.a):'',res=null,st={i:n-1,dir:'prev'};
+  var opts=function(){var h='';for(var k=0;k<n;k++)h+='<option value="'+k+'"'+(k===st.i?' selected':'')+'>Point '+(k+1)+'</option>';return h};
+  sheet('<h3>Fit a corner to an area</h3><div class="mut small">Mark the plot, then type the area you want, for example from the deed. The app shows where one corner must stand, along a boundary line, so the area comes to exactly that.</div>'
+    +'<label>Wanted area</label><div class="row"><input id="fiV" inputmode="decimal" placeholder="e.g. 50" value="'+(v===''?'':(+v).toFixed(4).replace(/\.?0+$/,''))+'" autocomplete="off"><select id="fiU">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(k===u?' selected':'')+'>'+UNIT[k].l+'</option>'}).join('')+'</select></div>'
+    +'<label>Corner to place</label><select id="fiI">'+opts()+'</select>'
+    +'<label>Slide it along</label><select id="fiD"><option value="prev">the side before it</option><option value="next">the side after it</option></select>'
+    +'<div id="fiR" class="mcard" style="margin-top:10px"></div>'
+    +'<div class="row"><button class="pri" id="fiOk" disabled>Move the corner</button><button id="fiNo">Close</button></div>');
+  var q=function(x){return $(x)};
+  var show=function(){
+    var x=parseFloat(q('#fiV').value.replace(',','.')),un=q('#fiU').value,el=q('#fiR'),b=q('#fiOk');
+    st.i=+q('#fiI').value;st.dir=q('#fiD').value;res=null;b.disabled=true;M.fit=null;
+    if(!(x>0)){el.innerHTML='<span class="mut">Type the wanted area to see where the corner goes.</span>';scheduleDraw();return}
+    var r=fitCalc(o,st.i,st.dir,toSqm(x,un));
+    if(r.err){el.innerHTML='<span style="color:var(--warn,#b3261e)">'+r.err+'</span>';scheduleDraw();return}
+    res=r;res.unit=un;b.disabled=false;M.fit={lat:r.lat,lon:r.lon,i:st.i};
+    var A=st.i+1,B=r.ri+1,far=r.t>=0;
+    el.innerHTML='<div><b>Point '+A+'</b>: '+(Math.abs(r.t)<0.05?'already in the right place.':'stand '+fl(Math.abs(r.t),1)+(far?' further out':' closer in')+' along the line from point '+B+' through point '+A+'.')+'</div>'
+      +'<div class="small">Side '+Math.min(A,B)+'&ndash;'+Math.max(A,B)+' becomes '+fl(r.newL,1)+' (now '+fl(r.L,1)+').</div>'
+      +'<div class="small">Area '+fa(r.now,un)+' &rarr; <b>'+fa(r.after==null?toSqm(x,un):r.after,un)+' '+UNIT[un].l+'</b></div>'
+      +(r.cross?'<div class="small" style="color:var(--warn,#b3261e)">The sides cross each other with this position. Try the other side or another corner.</div>':'');
+    scheduleDraw();
+  };
+  ['#fiV','#fiU','#fiI','#fiD'].forEach(function(id){q(id).oninput=show;q(id).onchange=show});
+  q('#fiNo').onclick=function(){M.fit=null;closeSheet();scheduleDraw()};
+  q('#fiOk').onclick=function(){
+    if(!res)return;var c=C[st.i];
+    M.undoFit={arr:C,i:st.i,prev:clone(c),lat:res.lat,lon:res.lon};
+    var accs=C.filter(function(_,k){return k!==st.i}).map(function(z){return z.acc||3}).sort(function(a,b){return a-b});
+    c.lat=res.lat;c.lon=res.lon;c.src='cut';c.fit=true;c.acc=accs.length?accs[Math.floor(accs.length/2)]:3;c.n=1;c.total=1;c.alt=null;c.altAcc=null;
+    M.fit=null;closeSheet();saveDraft();M.lastPanel='';mapBottom();scheduleDraw();toast('Point '+(st.i+1)+' moved. Undo puts it back.');
+    if(after)after();
+  };
+  show();
 }
 function holesSheet(){
   var hs=S.draft.holes,u=S.settings.unit;
