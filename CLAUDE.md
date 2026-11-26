@@ -32,13 +32,14 @@ node tests/run_all.js      # rebuilds, then runs every test and prints a summary
 node tests/run_all.js edit # only the test files whose name contains "edit"
 npm run serve              # http://localhost:8080 (needs nothing but node)
 ```
-Release routine: edit `src/index.src.html` -> `node build.js` -> run the tests -> bump `CACHE` in `sw.js` (currently `land-measure-v13`; keep the `v<number>` pattern) -> commit `src/`, `index.html`, `sw.js` together -> push to `main` (Pages publishes in about a minute). Update README when a feature is added.
+Release routine: edit `src/index.src.html` -> `node build.js` -> run the tests -> bump `CACHE` in `sw.js` (currently `land-measure-v14`; keep the `v<number>` pattern) -> commit `src/`, `index.html`, `sw.js` together -> push to `main` (Pages publishes in about a minute). Update README when a feature is added.
 
 Tests: Playwright + Chrome. `tests/helpers.js` finds Playwright (`npm install` or a global copy) and Chrome (`CHROME_PATH` env, common locations, else Playwright's own Chromium). Browser tests mock the map tiles, Nominatim and Firebase, so they need no internet. Screenshots go to `tests/shots/` (git-ignored). Python 3 with Pillow and poppler (`pdfinfo`, `pdftoppm`) are used by a few tests. In Playwright use `selectOption({ value: 'x' })`; a bare string matches label or value.
 
 ## Code map (src/index.src.html, one file, no libraries)
 - `// <MATH> ... // </MATH>` block: pure functions (projection `toXY/fromXY`, `polyArea`, `pointInPoly`, `segInt`, GPS averaging, walk processing, tape solving, KML/PDF writers). The node tests `tests/test_*.js` extract this block and run it, so keep it free of DOM code.
 - Custom slippy map on Esri World Imagery tiles. `MS` = persisted map state, `M` = runtime state. Corner = `{lat,lon,acc,src,note,ph,...}`.
+- Field plan: `fpSheet`, `fpGet` (state in `draft.fp`: n, unit, hub, sides, crosses by key, check cross, `prev` = GPS points to go back to), `fpApply` (redraws the plot on the draft's spot), pure maths `fpAlign` (slide + turn, mirror if the draft runs the other way), `fpCheckPair`, `fpCheckTol` in the MATH block. It reuses `tapeCalc(T)` / `tapeVals(T)`, which take any state object shaped like `TP`.
 - Edit toolkit: `editCardHTML`, `bindEdit`, `ptSetAngle`. Tape/crosses: `tapeVals`, `tapeCalc`, `tapeAutoHub`, `tapePlace` (cross values stored by key `'a-b'`).
 - Backup: `backupJSON`, `backupNow` (iOS share sheet), `backupAsk`, `backupCard`.
 - Cloud (dormant): the block before `// ---------- formatting ----------` (`FB`, `acctSign`, `syncMerge`, `syncNow`, `cloudOk`...). Plain Firebase REST, no SDK; one Firestore doc per plot `users/{uid}/plots/{id}` with `json`, `upd`, `del`. `FB = {apiKey, projectId}` is empty until the user provides them; then bump the SW cache and republish.

@@ -360,10 +360,35 @@ function tapeSigma(sides,diags){
   if(areas.length<30)return 0;var m=areas.reduce(function(a,b){return a+b},0)/areas.length,v=areas.reduce(function(a,b){return a+(b-m)*(b-m)},0)/areas.length;return Math.sqrt(v);
 }
 // tape shape -> map corners around (lat0,lon0); the first side points along compass bearing brg (degrees)
-function tapeCorners(P,lat0,lon0,brg){
+function tapeCorners(P,lat0,lon0,brg,mir){
+  if(mir)P=P.map(function(p){return{x:p.x,y:-p.y}});
   var ce=centroid(P),ph=(90-brg)*DEG,c=Math.cos(ph),s=Math.sin(ph);
   return P.map(function(p){var x=p.x-ce.x,y=p.y-ce.y,g=fromXY(x*c-y*s,x*s+y*c,lat0,lon0);return{lat:g.lat,lon:g.lon,acc:0.1,n:1,total:1,alt:null,altAcc:null,src:'tape'}});
 }
+// field plan: put the tape shape P on the rough shape R (the same corners, from GPS or the map): same turn direction first, then the slide and turn that bring the points closest to R
+function fpAlign(P,R){
+  var n=P.length,flip=polyArea(P)*polyArea(R)<0,Q=P.map(function(p){return{x:p.x,y:flip?-p.y:p.y}}),qx=0,qy=0,rx=0,ry=0,i;
+  for(i=0;i<n;i++){qx+=Q[i].x;qy+=Q[i].y;rx+=R[i].x;ry+=R[i].y}
+  qx/=n;qy/=n;rx/=n;ry/=n;
+  var a=0,b=0;
+  for(i=0;i<n;i++){var ux=Q[i].x-qx,uy=Q[i].y-qy,vx=R[i].x-rx,vy=R[i].y-ry;a+=ux*vx+uy*vy;b+=ux*vy-uy*vx}
+  var th=Math.atan2(b,a),c=Math.cos(th),s=Math.sin(th),out=[],e2=0;
+  for(i=0;i<n;i++){var wx=Q[i].x-qx,wy=Q[i].y-qy,x=rx+wx*c-wy*s,y=ry+wx*s+wy*c;out.push({x:x,y:y});e2+=(x-R[i].x)*(x-R[i].x)+(y-R[i].y)*(y-R[i].y)}
+  return{P:out,flip:flip,rms:Math.sqrt(e2/n),turn:th/DEG};
+}
+// field plan: one extra cross (not among the n-3 from corner h) to catch a slip of the tape: the longest one that stays inside the rough shape R
+function fpCheckPair(R,h){
+  var n=R.length;if(n<4)return null;
+  var used={},best=null;tapeCross(n,h).forEach(function(c){used[Math.min(c[0],c[1])+'-'+Math.max(c[0],c[1])]=1});
+  for(var i=0;i<n;i++)for(var j=i+2;j<n;j++){
+    if(i===0&&j===n-1)continue;if(used[i+'-'+j])continue;
+    var cand={a:i,b:j,len:Math.hypot(R[j].x-R[i].x,R[j].y-R[i].y),inside:crossInside(R,i,j)};
+    if(!best||(cand.inside&&!best.inside)||(cand.inside===best.inside&&cand.len>best.len))best=cand;
+  }
+  return best;
+}
+// how far a taped check cross may differ from the length the other tapes predict (metres)
+function fpCheckTol(L){return 0.15+0.005*L}
 function xmlEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function kmlOf(plots){
   var ring=function(C){var r=C.map(function(c){return c.lon.toFixed(8)+','+c.lat.toFixed(8)+',0'});r.push(r[0]);return r.join(' ')};
@@ -693,6 +718,10 @@ function wakeOff(){try{if(S.wake)S.wake.release()}catch(e){}S.wake=null}
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&(S.cap||S.walk))wakeOn()});
 
 // ---------- capture ----------
+function placeOnMap(){
+  M.refit=true;S.tab='map';render();
+  toast(MS.add==='centre'?'Move the map so the pin is on the corner, then tap Add':'Tap the corner on the map. It joins this plot as a map point');
+}
 function startCapture(replaceIdx){
   startMotion();startGPS();
   S.cap={samples:[],moved:0,t0:Date.now(),dur:S.settings.dur*1000,lastTs:0,replace:(typeof replaceIdx==='number')?replaceIdx:-1};
@@ -795,7 +824,7 @@ function slopeRows(an,u){
 var TILE_B='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 var TILE_L='https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 var MAXNAT=19,MAXZ=21,MINZ=3,KM='lm.map.v1';
-var MS=Object.assign({lat:11.05,lon:76.07,zoom:12,fill:0.12,labels:true,sides:true,saved:true,add:'tap',loupe:true,ang:false,estep:1,eang:1},load(KM,{}));
+var MS=Object.assign({lat:11.05,lon:76.07,zoom:12,fill:0.12,labels:true,sides:true,saved:true,add:'tap',loupe:true,ang:false,estep:1,eang:1,clear:false},load(KM,{}));
 var M={W:0,H:0,dpr:1,cv:null,cx:null,ptrs:{},g:null,raf:0,sel:-1,view:null,inited:false,refit:false,follow:false,pop:null,sres:[],lastPanel:'',lastScale:'',saveT:null,tileErr:0,naFlag:0,cors:'',corsFb:0,ring:-1,split:null,mv:false,loupe:null};
 var TC={},TCK=[],ATTR='Tiles &copy; Esri. Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
 
@@ -851,6 +880,8 @@ function getTile(layer,z,x,y){
   TCK.push(key);if(TCK.length>600){TCK.splice(0,150).forEach(function(k){delete TC[k]})}
   return null;
 }
+// "clearer picture": a second pass of the same pictures blended with overlay raises the contrast, so field edges, trees and roofs stand out a little more
+function clearPass(ctx){ctx.save();ctx.globalCompositeOperation='overlay';ctx.globalAlpha=0.6;drawTiles(ctx,'B');ctx.restore()}
 function drawTiles(ctx,layer){
   var z=MS.zoom,cap=Math.min(MAXNAT,MS.nat||MAXNAT),tz=Math.min(cap,Math.max(0,Math.ceil(z-0.25))),ts=256*Math.pow(2,z-tz);
   var ox=mX(MS.lon,z)-M.W/2,oy=mY(MS.lat,z)-M.H/2;
@@ -880,6 +911,7 @@ function mapDraw(){
   var ctx=M.cx,W=M.W,H=M.H;ctx.setTransform(M.dpr,0,0,M.dpr,0,0);
   ctx.fillStyle='#26302a';ctx.fillRect(0,0,W,H);
   var tl=drawTiles(ctx,'B');
+  if(MS.clear)clearPass(ctx);
   if(MS.labels&&MS.zoom<17.5)drawTiles(ctx,'L');
   var nf=tl.na>0?1:0;if(nf!==M.naFlag){M.naFlag=nf;var at=$('#mattr');if(at)at.innerHTML=(nf?'<b>Sharper pictures are not available here. Showing the best available.</b><br>':'')+ATTR}
   if(tl.got===0&&M.tileErr>2){ctx.fillStyle='rgba(255,255,255,.85)';ctx.font='600 14px -apple-system,sans-serif';ctx.textAlign='center';ctx.fillText('Map pictures are not loading. Check the internet.',W/2,H/2);ctx.textAlign='start'}
@@ -1383,7 +1415,7 @@ function mmDraw(){
     if(gpsOk){var near=!pts.length||pts.some(function(p){return dist(p,g)<400});if(near)pts.push({lat:g.lat,lon:g.lon})}
     var v=miniView(W,H,pts);if(v){MS.lat=v.lat;MS.lon=v.lon;MS.zoom=v.zoom}
     ctx.fillStyle='#26302a';ctx.fillRect(0,0,W,H);
-    drawTiles(ctx,'B');
+    drawTiles(ctx,'B');if(MS.clear)clearPass(ctx);
     var P=C.map(function(c){return toScr(c.lat,c.lon)}),n=P.length;
     ctx.lineJoin='round';ctx.lineCap='round';
     if(n>=2){
@@ -1441,6 +1473,7 @@ function openPop(kind){
       +'<label class="ck"><input type="checkbox" id="mLab"'+(MS.labels?' checked':'')+'>Place names (zoomed out)</label>'
       +'<div class="pt"><span>Units</span></div><div class="row"><select id="mAU">'+[['cent','cent'],['acre','acre'],['sqm','sq m'],['sqft','sq ft']].map(function(a){return'<option value="'+a[0]+'"'+(S.settings.unit===a[0]?' selected':'')+'>'+a[1]+'</option>'}).join('')+'</select><select id="mLU"><option value="m"'+(S.settings.lunit!=='ft'?' selected':'')+'>metres</option><option value="ft"'+(S.settings.lunit==='ft'?' selected':'')+'>feet</option></select></div>'
       +'<div class="pt"><span>Sharpest picture level</span></div><select id="mNat"><option value="0"'+(!MS.nat?' selected':'')+'>Auto (best available)</option>'+[19,18,17,16].map(function(v){return'<option value="'+v+'"'+(MS.nat===v?' selected':'')+'>Up to level '+v+'</option>'}).join('')+'</select>'
+      +'<label class="ck"><input type="checkbox" id="mClr"'+(MS.clear?' checked':'')+'>Clearer picture (more contrast)</label>'
       +'<label class="ck"><input type="checkbox" id="mLoupe"'+(MS.loupe!==false?' checked':'')+'>Magnifier when dragging a point</label>'
       +'<div class="pt">Add points by</div><div class="seg2"><button data-add="tap" class="'+(MS.add==='tap'?'on':'')+'">Tap on map</button><button data-add="centre" class="'+(MS.add==='centre'?'on':'')+'">Centre pin</button><button data-add="draw" class="'+(MS.add==='draw'?'on':'')+'">Draw</button><button data-add="edit" class="'+(MS.add==='edit'?'on':'')+'">Edit</button></div>'
       +(M.view?'':'<button class="danger" id="mClear">Remove all points</button>')
@@ -1452,11 +1485,12 @@ function openPop(kind){
     $('#mSaved').onchange=function(){MS.saved=this.checked;scheduleDraw();saveView()};
     $('#mLab').onchange=function(){MS.labels=this.checked;scheduleDraw();saveView()};
     $('#mLoupe').onchange=function(){MS.loupe=this.checked;saveView()};
+    $('#mClr').onchange=function(){MS.clear=this.checked;saveView();scheduleDraw();mmSched()};
     $('#mNat').onchange=function(){MS.nat=+this.value||0;saveView();scheduleDraw()};
     $('#mAU').onchange=function(){S.settings.unit=this.value;saveSettings();M.lastPanel='';mapBottom();scheduleDraw()};
     $('#mLU').onchange=function(){S.settings.lunit=this.value;saveSettings();M.lastPanel='';M.lastScale='';mapBottom();scheduleDraw()};
     el.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){MS.add=b.dataset.add;M.edit=null;if(MS.add!=='edit')M.sel=-1;M.lastPanel='';saveView();if(MS.add==='edit')toast('Tap a side or a point to edit it');if(MS.add==='draw')toast('Draw the outline with one finger. Two fingers move or zoom the map.');el.querySelectorAll('[data-add]').forEach(function(x){x.classList.toggle('on',x===b)});mapBottom();scheduleDraw()}});
-    if($('#mClear'))$('#mClear').onclick=function(){closePop();if(!S.draft.corners.length){toast('No points yet');return}choose('Remove all points?','All points of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){S.draft.corners=[];S.draft.holes=[];S.draft.tape=null;M.sel=-1;M.ring=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()}})};
+    if($('#mClear'))$('#mClear').onclick=function(){closePop();if(!S.draft.corners.length){toast('No points yet');return}choose('Remove all points?','All points of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){S.draft.corners=[];S.draft.holes=[];S.draft.tape=null;S.draft.fp=null;M.sel=-1;M.ring=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()}})};
   }
 }
 function mapBottom(){
@@ -1532,6 +1566,7 @@ function toolsSheet(){
     +'<button id="tEdit"'+(o.corners.length>=2?'':' disabled')+'>&#10021; Edit sides and points<small>Tap a side or a point. Change a length or an angle with + and &minus; buttons, nudge a point with arrows, add a point in the middle of a side.</small></button>'
     +'<button id="tFit"'+(ok?'':' disabled')+'>&#127919; Fit to a wanted area<small>Type the area you want (say 94 cent). The app adds or moves one point so the plot comes to exactly that.</small></button>'
     +'<button id="tTape">&#128208; Enter tape lengths<small>Type the side lengths measured with a tape. The plot is drawn from them.</small></button>'
+    +'<button id="tField"'+(!M.view&&o.mode==='corners'&&o.corners.length>=3&&o.corners.length<=12?'':' disabled')+'>&#129517; Field plan<small>Steps to check the draft on the ground with a tape: which corners to mark, which sides and crosses to measure, in the fewest readings.</small></button>'
     +'<button id="tMove"'+(ok?'':' disabled')+'>&#10021; Move or turn the plot<small>For a plot drawn from tape lengths: slide it onto the right place and turn it.</small></button>'
     +'</div><div class="row"><button id="tClose">Close</button></div>');
   var q=function(s){return $(s)};
@@ -1543,6 +1578,7 @@ function toolsSheet(){
   q('#tFit').onclick=function(){fitSheet(o,function(){})};
   q('#tEdit').onclick=function(){closeSheet();MS.add='edit';M.edit=null;M.sel=-1;saveView();mapBottom();scheduleDraw();toast('Tap a side or a point to edit it')};
   q('#tTape').onclick=function(){tapeSheet()};
+  q('#tField').onclick=fpSheet;
   q('#tMove').onclick=function(){
     if(!canMoveAll(o)){toast('Move works for plots from tape lengths or map points. GPS points would lose their position');return}
     closeSheet();M.mv=true;M.lastPanel='';mapBottom();scheduleDraw();
@@ -1667,17 +1703,17 @@ function recSheet(target,after){
 }
 
 // ---------- tape lengths ----------
-var TP={n:4,u:'m',sides:[],dm:{},hub:0,brg:0,loaded:false,hint:''};
+var TP={n:4,u:'m',sides:[],dm:{},hub:0,brg:0,mir:false,loaded:false,hint:''};
 function tkey(p){return Math.min(p[0],p[1])+'-'+Math.max(p[0],p[1])}
-function tapeVals(){
-  var f=TP.u==='ft'?0.3048:1,pv=function(t){var v=parseFloat(String(t||'').replace(',','.'));return v>0?v*f:NaN},n=TP.n,h=TP.hub%n,sides=[],diags=[];
-  for(var i=0;i<n;i++)sides.push(pv(TP.sides[i]));
-  tapeCross(n,h).forEach(function(p){diags.push(pv(TP.dm[tkey(p)]))});
+function tapeVals(T){
+  T=T||TP;var f=T.u==='ft'?0.3048:1,pv=function(t){var v=parseFloat(String(t||'').replace(',','.'));return v>0?v*f:NaN},n=T.n,h=T.hub%n,sides=[],diags=[];
+  for(var i=0;i<n;i++)sides.push(pv(T.sides[i]));
+  tapeCross(n,h).forEach(function(p){diags.push(pv(T.dm[tkey(p)]))});
   return{sides:sides,diags:diags,hub:h};
 }
-function tapeCalc(){
-  var v=tapeVals(),n=TP.n,h=v.hub,miss=v.sides.some(function(x){return!(x>0)});
-  if(miss)return{ok:false,err:'Type all '+TP.n+' side lengths'};
+function tapeCalc(T){
+  T=T||TP;var v=tapeVals(T),n=T.n,h=v.hub,miss=v.sides.some(function(x){return!(x>0)});
+  if(miss)return{ok:false,err:'Type all '+T.n+' side lengths'};
   var sr=tapeRot(v.sides,h),r=tapeSolve(sr,v.diags,h);if(!r.ok)return r;
   r.sig=tapeSigma(sr,v.diags);var P=new Array(n);r.P.forEach(function(p,k){P[(h+k)%n]=p});r.P=tapeOrient(P);r.sidesM=v.sides;r.diagsM=v.diags;return r;
 }
@@ -1703,7 +1739,7 @@ function tapeDiagram(n,hub,ref){
 }
 function tapeSheet(){
   if(!TP.loaded){TP.loaded=true;TP.u=inFt()?'ft':'m';var t=S.draft.tape;
-    if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.brg=t.brg||0;TP.hub=t.hub||0;TP.dm={};tapeCross(TP.n,TP.hub).forEach(function(p,i){if(t.diags&&t.diags[i]!=null&&String(t.diags[i])!=='')TP.dm[tkey(p)]=String(t.diags[i])})}
+    if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.brg=t.brg||0;TP.mir=!!t.mir;TP.hub=t.hub||0;TP.dm={};tapeCross(TP.n,TP.hub).forEach(function(p,i){if(t.diags&&t.diags[i]!=null&&String(t.diags[i])!=='')TP.dm[tkey(p)]=String(t.diags[i])})}
     else tapeAutoHub()}
   var u=S.settings.unit,drawIn=function(){
     var n=TP.n,h=TP.hub%n,cr=tapeCross(n,h),ref=tapeRef(),hh='<h3>Tape lengths</h3><div class="mut small">Measure each side of the plot with a tape, going round in order. A shape with 4 or more corners also needs <b>crosses</b>: tapes pulled straight across the plot from one corner to another, so the shape is fixed.</div>';
@@ -1722,7 +1758,8 @@ function tapeSheet(){
       cr.forEach(function(c){hh+='<div><label style="margin:0 0 3px">'+(c[0]+1)+' &rarr; '+(c[1]+1)+'</label><input data-d="'+tkey(c)+'" inputmode="decimal" value="'+esc(TP.dm[tkey(c)]||'')+'" autocomplete="off"></div>'});
       hh+='</div>'}
     hh+='<div id="tRes"></div>';
-    hh+='<label>Direction of side 1 (0 = north, 90 = east)</label><input id="tB" inputmode="decimal" value="'+TP.brg+'" autocomplete="off">';
+    hh+='<label>Direction of side 1 (0 = north, 90 = east)</label><input id="tB" inputmode="decimal" value="'+TP.brg+'" autocomplete="off">'
+      +'<label class="ck"><input type="checkbox" id="tMir"'+(TP.mir?' checked':'')+'>Corners go round clockwise on the map</label>';
     hh+='<div class="row"><button class="pri" id="tPlace">Put on the map</button><button id="tX">Close</button></div>';
     sheet(hh);
     var upd=function(){
@@ -1743,6 +1780,7 @@ function tapeSheet(){
         var b=tapeBestHub(rf);TP.hub=b.hub;TP.hint='Corner '+(b.hub+1)+' is best: '+(b.ok?'every cross stays inside the plot and no triangle is thin.':'the boundary bends inward, so a cross may pass outside the plot. Tape it carefully.');drawIn()};
     }
     $('#tB').oninput=function(){TP.brg=parseFloat(this.value.replace(',','.'))||0};
+    $('#tMir').onchange=function(){TP.mir=this.checked};
     $('#tX').onclick=closeSheet;
     $('#tPlace').onclick=tapePlace;
     upd();
@@ -1753,12 +1791,135 @@ function tapePlace(){
   var r=tapeCalc();if(!r.ok)return;
   var org=(S.tab==='map'||!(S.gps.lat!=null&&Date.now()-S.gps.rx<30000))?{lat:MS.lat,lon:MS.lon}:{lat:S.gps.lat,lon:S.gps.lon};
   var go=function(){
-    var d=S.draft;d.corners=tapeCorners(r.P,org.lat,org.lon,TP.brg);d.holes=[];d.mode='corners';
-    d.tape={sides:TP.sides.slice(0,TP.n),diags:tapeCross(TP.n,TP.hub%TP.n).map(function(c){return TP.dm[tkey(c)]||''}),hub:TP.hub%TP.n,u:TP.u,brg:TP.brg};
+    var d=S.draft;d.corners=tapeCorners(r.P,org.lat,org.lon,TP.brg,TP.mir);d.holes=[];d.mode='corners';d.fp=null;
+    d.tape={sides:TP.sides.slice(0,TP.n),diags:tapeCross(TP.n,TP.hub%TP.n).map(function(c){return TP.dm[tkey(c)]||''}),hub:TP.hub%TP.n,u:TP.u,brg:TP.brg,mir:!!TP.mir};
     saveDraft();closeSheet();M.ring=-1;M.split=null;M.view=null;M.refit=true;S.tab='map';render();gcPhotos();
     toast('Plot placed in the middle of the map. Use Tools → Move or turn the plot to put it on the land');
   };
   if(S.draft.corners.length)choose('Replace the current points?','The points of the current plot will be replaced by the plot drawn from the tape lengths.',[{label:'Replace',val:true,cls:'danger'},{label:'Cancel',val:false}]).then(function(ok){if(ok)go()});else go();
+}
+
+// ---------- field plan: from the rough GPS / map draft to exact tape lengths in the fewest steps ----------
+function fpGet(d){
+  var C=d.corners,n=C.length;
+  if(!d.fp||d.fp.n!==n){
+    var R=toXY(C,C[0].lat,C[0].lon);
+    d.fp={n:n,u:inFt()?'ft':'m',hub:n>=4?tapeBestHub(R).hub:0,sides:[],dm:{},chk:'',ck:null,ckHub:-1,prev:null,draftA:null};
+  }
+  return d.fp;
+}
+function fpLen(a,b){return Math.hypot(b.x-a.x,b.y-a.y)}
+function fpFmt(T,m){var f=T.u==='ft'?0.3048:1;return num(m/f,1)+' '+T.u}
+function fpText(d,T,R){
+  var n=T.n,h=T.hub%n,cr=tapeCross(n,h),L=['Field plan'+(d.name?' - '+d.name:''),
+    n+' corners: put a peg on each one and number them 1 to '+n+' in the order of the map.',
+    'Tape readings: '+n+' sides'+(cr.length?' + '+cr.length+' crosses':'')+' = '+(n+cr.length)+(T.ck?' (+1 check cross)':''),'','SIDES ('+T.u+')'];
+  for(var i=0;i<n;i++)L.push((i+1)+' to '+((i+1)%n+1)+' (about '+fpFmt(T,fpLen(R[i],R[(i+1)%n]))+'): '+(T.sides[i]||'______'));
+  if(cr.length){L.push('','CROSSES from corner '+(h+1));cr.forEach(function(c){L.push((c[0]+1)+' to '+(c[1]+1)+' (about '+fpFmt(T,fpLen(R[c[0]],R[c[1]]))+'): '+(T.dm[tkey(c)]||'______'))})}
+  if(T.ck)L.push('','CHECK CROSS (optional)',(T.ck.a+1)+' to '+(T.ck.b+1)+' (about '+fpFmt(T,fpLen(R[T.ck.a],R[T.ck.b]))+'): '+(T.chk||'______'));
+  return L.join('\n');
+}
+function fpApply(){
+  var d=S.draft,T=d.fp;if(!T)return;
+  var r=tapeCalc(T);if(!r.ok||(r.warn&&/cross|wraps/.test(r.warn)))return;
+  var C=d.corners,n=C.length,c0=C[0],R=toXY(C,c0.lat,c0.lon),al=fpAlign(r.P,R),drawn=C.every(function(c){return c.src==='tape'});
+  if(!drawn)T.prev=clone(C);
+  d.corners=al.P.map(function(p,i){var g=fromXY(p.x,p.y,c0.lat,c0.lon),o={lat:g.lat,lon:g.lon,acc:0.1,n:1,total:1,alt:null,altAcc:null,src:'tape'};if(C[i].note)o.note=C[i].note;if(C[i].ph)o.ph=C[i].ph;return o});
+  var phi=Math.atan2(al.P[1].y-al.P[0].y,al.P[1].x-al.P[0].x)/DEG,brg=((90-phi)%360+360)%360;
+  d.mode='corners';
+  d.tape={sides:T.sides.slice(0,n),diags:tapeCross(n,T.hub%n).map(function(c){return T.dm[tkey(c)]||''}),hub:T.hub%n,u:T.u,brg:Math.round(brg*10)/10,mir:al.flip};
+  saveDraft();closeSheet();M.ring=-1;M.split=null;M.view=null;M.refit=true;S.tab='map';render();gcPhotos();
+  toast('Plot redrawn from your tape lengths, on the same spot');
+}
+function fpSheet(){
+  var d=S.draft,C=d.corners,n=C.length;
+  if(M.view){toast('Tap Edit a copy first, then open the field plan');return}
+  if(d.mode!=='corners'){toast('The field plan is for corner points');return}
+  if(n<3){toast('Mark at least 3 corners first (GPS or on the satellite map)');return}
+  if(n>12){toast('A field plan works for up to 12 corners. Simplify the outline first');return}
+  var T=fpGet(d),R=toXY(C,C[0].lat,C[0].lon),u=S.settings.unit,drawn=C.every(function(c){return c.src==='tape'}),an=anOf(d),hint='';
+  if(!drawn&&an)T.draftA=an.net;
+  var cp=n>=4?fpCheckPair(R,T.hub%n):null;
+  if(!cp)T.ck=null;else if(!T.ck||T.ckHub!==T.hub){if(!T.ck||T.ck.a!==cp.a||T.ck.b!==cp.b)T.chk='';T.ck={a:cp.a,b:cp.b}}
+  T.ckHub=T.hub;
+  if(!drawn&&n>=4)hint='Corner '+(T.hub+1)+' picked from the shape on the map: '+(tapeBestHub(R).hub===T.hub&&tapeBestHub(R).ok?'every cross stays inside the plot and no triangle is thin.':'a cross may pass outside the plot or make a thin triangle. Tape it carefully.');
+  var draw=function(){
+    var h=T.hub%n,cr=tapeCross(n,h),hh='<h3>Field plan</h3><div class="mut small">GPS and map points are only a rough draft. This plan gets the exact shape with a tape in the fewest steps: <b>'+n+' sides'+(cr.length?' + '+cr.length+' crosses':'')+' = '+(n+cr.length)+' tape readings</b>.</div>';
+    if(drawn)hh+='<div class="mut small" style="margin-top:8px">This plot is already drawn from tape lengths. Change a number to correct it, then put it on the map again.</div>';
+    hh+='<div style="margin-top:12px"><b>1 &middot; Mark the corners</b></div><div class="mut small">Put a peg, stone or paint mark on every corner of the boundary and number them 1 to '+n+' in the order shown. Use the real boundary corner (fence, stone, wall edge), not the GPS dot.</div>'
+      +tapeDiagram(n,h,R);
+    hh+='<div class="row" style="align-items:center;margin-top:12px"><div style="flex:1.6"><b>2 &middot; Measure the sides</b></div><select id="fU"><option value="m"'+(T.u==='m'?' selected':'')+'>metres</option><option value="ft"'+(T.u==='ft'?' selected':'')+'>feet</option></select></div>'
+      +'<div class="mut small">Go round in order. Pull the tape tight and level. On a slope, measure in level steps.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">';
+    for(var i=0;i<n;i++)hh+='<div><label style="margin:0 0 3px">'+(i+1)+' &rarr; '+((i+1)%n+1)+' <span class="mut small">about '+fpFmt(T,fpLen(R[i],R[(i+1)%n]))+'</span></label><input data-fs="'+i+'" inputmode="decimal" value="'+esc(T.sides[i]||'')+'" autocomplete="off"><div class="small" id="fs-'+i+'" style="min-height:16px"></div></div>';
+    hh+='</div>';
+    if(cr.length){
+      hh+='<div style="margin-top:12px"><b>3 &middot; Measure the crosses</b> <span class="mut small">only '+cr.length+' needed for '+n+' corners</span></div>'
+        +'<div class="mut small">A cross is a tape pulled straight across the plot from corner '+(h+1)+' to another corner. Tap a corner on the picture to take the crosses from that corner. A cross should not pass through a house or a pond.</div>'
+        +'<div class="row" style="align-items:center;margin-top:6px"><div style="flex:1.2">Crosses from corner</div><select id="fHub">'+hubOpts(n,h)+'</select></div>'
+        +'<div class="row" style="margin-top:6px"><button id="fBest">Suggest the best corner</button></div>'
+        +'<div class="mut small" id="fHint" style="margin-top:4px">'+esc(hint)+'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';
+      cr.forEach(function(c){var k=tkey(c);hh+='<div><label style="margin:0 0 3px">'+(c[0]+1)+' &rarr; '+(c[1]+1)+' <span class="mut small">about '+fpFmt(T,fpLen(R[c[0]],R[c[1]]))+'</span></label><input data-fd="'+k+'" inputmode="decimal" value="'+esc(T.dm[k]||'')+'" autocomplete="off"><div class="small" id="fd-'+k+'" style="min-height:16px"></div></div>'});
+      hh+='</div>';
+    }
+    if(T.ck){
+      hh+='<div style="margin-top:12px"><b>4 &middot; One check cross</b> <span class="mut small">optional, catches a tape slip</span></div>'
+        +'<div class="mut small">Measure one more cross. The app compares it with what your other lengths predict.</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px"><div><label style="margin:0 0 3px">'+(T.ck.a+1)+' &rarr; '+(T.ck.b+1)+' <span class="mut small">about '+fpFmt(T,fpLen(R[T.ck.a],R[T.ck.b]))+'</span></label><input id="fChk" inputmode="decimal" value="'+esc(T.chk||'')+'" autocomplete="off"></div></div><div class="small" id="fCk" style="min-height:16px"></div>';
+    }
+    hh+='<div id="fRes"></div>'
+      +'<div class="row" style="margin-top:10px"><button class="pri" id="fPut">Put on the map, same place</button></div>'
+      +'<div class="row"><button id="fShare">Share this list</button><button id="fX">Close</button></div>'
+      +'<div class="row">'+(T.prev?'<button id="fUndo">Back to the GPS points</button>':'')+'<button id="fClr" class="danger">Clear typed lengths</button></div>';
+    sheet(hh);
+    var f=function(){return T.u==='ft'?0.3048:1},num0=function(t){var v=parseFloat(String(t||'').replace(',','.'));return v>0?v:NaN};
+    var flag=function(id,val,exp,tol){
+      var el=$('#'+id);if(!el)return;var v=num0(val);if(!(v>0)){el.textContent='';return}
+      var df=v*f()-exp,bad=Math.abs(df)>tol;el.style.color=bad?'var(--warn)':'var(--mut)';
+      el.textContent=bad?'Draft says about '+fpFmt(T,exp)+'. Measure again if unsure.':(df<0?'−':'+')+fpFmt(T,Math.abs(df))+' from the draft';
+    };
+    var tol=function(a,b){return Math.max(3,2*Math.hypot(C[a].acc||3,C[b].acc||3)+1)};
+    var upd=function(){
+      for(var i=0;i<n;i++)flag('fs-'+i,T.sides[i],fpLen(R[i],R[(i+1)%n]),tol(i,(i+1)%n));
+      tapeCross(n,T.hub%n).forEach(function(c){var k=tkey(c);flag('fd-'+k,T.dm[k],fpLen(R[c[0]],R[c[1]]),tol(c[0],c[1]))});
+      var r=tapeCalc(T),el=$('#fRes'),ck=$('#fCk');if(ck)ck.textContent='';
+      if(!r.ok){el.innerHTML='<div class="mut small" style="margin-top:10px">'+esc(r.err||'')+'</div>';$('#fPut').disabled=true;return}
+      var out='<div style="margin-top:10px"><div class="big-num" style="font-size:28px">'+fa(r.area,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small">'+fa(r.area,'sqm')+' sq m &middot; perimeter '+fl(r.per,1)+' &middot; typical error &plusmn;'+fa(r.sig,u)+' '+UNIT[u].l+'</div>';
+      if(!drawn&&T.draftA>0){var dd=r.area-T.draftA,pc=dd/T.draftA*100;out+='<div class="small" style="margin-top:6px">GPS / map draft: '+fa(T.draftA,u)+' '+UNIT[u].l+'. The tape plot is '+fa(Math.abs(dd),u)+' '+UNIT[u].l+' ('+num(Math.abs(pc),1)+'%) '+(dd<0?'smaller':'larger')+'. Trust the tape.</div>'}
+      if(r.warn)out+='<div class="warnbox">'+esc(r.warn)+'</div>';
+      else if(!drawn){var al=fpAlign(r.P,R);if(al.rms>0.5*Math.sqrt(r.area))out+='<div class="warnbox">The tape shape is very different from the draft. Check that your numbers go round the plot in the same order as the corners on the map.</div>'}
+      el.innerHTML=out+'</div>';
+      $('#fPut').disabled=!!r.warn&&/cross|wraps/.test(r.warn);
+      var v=num0(T.chk);
+      if(T.ck&&ck&&v>0){
+        var pr=fpLen(r.P[T.ck.a],r.P[T.ck.b]),ms=v*f(),df=ms-pr,tl=fpCheckTol(pr),ab=Math.abs(df),
+          base='Check cross: your other lengths predict '+fpFmt(T,pr)+', you measured '+fpFmt(T,ms)+' ('+fpFmt(T,ab)+' apart). ';
+        if(ab<=tl){ck.style.color='var(--acc)';ck.textContent=base+'Good, the measurements agree.'}
+        else if(ab<=3*tl){ck.style.color='var(--warn)';ck.textContent=base+'A little off. Measure the longest sides again.'}
+        else{ck.style.color='var(--warn)';ck.textContent=base+'They do not agree, one tape is wrong. Measure the sides and crosses again.'}
+      }
+    };
+    $('#sheet').querySelectorAll('input[data-fs]').forEach(function(x){x.oninput=function(){T.sides[+x.dataset.fs]=x.value;saveDraft();upd()}});
+    $('#sheet').querySelectorAll('input[data-fd]').forEach(function(x){x.oninput=function(){T.dm[x.dataset.fd]=x.value;saveDraft();upd()}});
+    if($('#fChk'))$('#fChk').oninput=function(){T.chk=this.value;saveDraft();upd()};
+    $('#fU').onchange=function(){T.u=this.value;saveDraft();draw()};
+    var setHub=function(k,msg){T.hub=k;hint=msg||'';var c2=n>=4?fpCheckPair(R,k):null;if(!c2)T.ck=null;else{if(!T.ck||T.ck.a!==c2.a||T.ck.b!==c2.b)T.chk='';T.ck={a:c2.a,b:c2.b}}T.ckHub=k;saveDraft();draw()};
+    if($('#fHub')){
+      $('#fHub').onchange=function(){setHub(+this.value)};
+      $('#sheet').querySelectorAll('#tDia [data-h]').forEach(function(g){g.onclick=function(){setHub(+g.dataset.h)}});
+      $('#fBest').onclick=function(){var b=tapeBestHub(R);setHub(b.hub,'Corner '+(b.hub+1)+' is best: '+(b.ok?'every cross stays inside the plot and no triangle is thin.':'the boundary bends inward, so a cross may pass outside the plot. Tape it carefully.'))};
+    }
+    $('#fX').onclick=closeSheet;
+    $('#fShare').onclick=function(){share('Field plan',fpText(d,T,R),'field-plan.txt','text/plain')};
+    $('#fClr').onclick=function(){choose('Clear all typed lengths?','The sides, crosses and check cross you typed will be removed.',[{label:'Clear',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){T.sides=[];T.dm={};T.chk='';saveDraft();fpSheet()}})};
+    if($('#fUndo'))$('#fUndo').onclick=function(){choose('Go back to the GPS points?','The corners will be the GPS / map points you had before the tape plot.',[{label:'Go back',val:true,cls:'pri'},{label:'Keep tape plot',val:false}]).then(function(ok){if(!ok)return;d.corners=clone(T.prev);d.tape=null;T.prev=null;saveDraft();closeSheet();M.refit=true;render();gcPhotos()})};
+    $('#fPut').onclick=function(){
+      if(drawn)fpApply();
+      else choose('Replace the GPS points?','The corners will be redrawn from your tape lengths, on the same spot. You can go back to the GPS points afterwards.',[{label:'Replace',val:true,cls:'pri'},{label:'Cancel',val:false}]).then(function(ok){if(ok)fpApply()});
+    };
+    upd();
+  };
+  draw();
 }
 
 // ---------- split ----------
@@ -1944,7 +2105,7 @@ function renderMeasure(){
       var idx=S.cap.replace>=0?S.cap.replace+1:n+1;
       h+='<div><b>Capturing corner '+idx+'</b>. Stand still at the corner.</div><div class="bar"><i id="capbar"></i></div><div class="mut small" id="captxt">Starting…</div><div class="row" style="margin-top:12px"><button class="pri" id="bUse">Use now</button><button id="bCancel">Cancel</button></div>';
     }else{
-      h+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark. Hold the phone steady in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving. Go around the plot in order. No GPS? Use the satellite map instead.</div>';
+      h+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark. Hold the phone steady in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving. Go around the plot in order. No GPS? Use the satellite map instead.</div><button id="bPlace" style="width:100%;margin-top:10px">&#128205; GPS weak here? Place corner '+(n+1)+' on the satellite map</button>';
       if(n){h+='<div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">Undo last</button><button id="bClear" class="danger">Start over</button></div>'}
     }
   }else{
@@ -1955,7 +2116,7 @@ function renderMeasure(){
       if(n)h+='<div class="row" style="margin-top:12px"><button id="bClear" class="danger">Start over</button></div>';
     }
   }
-  if(!busy)h+='<button id="bToMap" style="width:100%;margin-top:12px">&#128752;&#65039; '+(n?'View on satellite map':'Mark on satellite map (no GPS needed)')+'</button><button id="bTape" style="width:100%;margin-top:8px">&#128208; Enter tape lengths</button>';
+  if(!busy)h+='<button id="bToMap" style="width:100%;margin-top:12px">&#128752;&#65039; '+(n?'View on satellite map':'Mark on satellite map (no GPS needed)')+'</button><button id="bTape" style="width:100%;margin-top:8px">&#128208; Enter tape lengths</button>'+(d.mode==='corners'&&n>=3&&n<=12?'<button id="bField" style="width:100%;margin-top:8px">&#129517; Field plan: check with a tape</button>':'');
   h+='</div>';
   if(an&&!busy){
     h+='<div class="card"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<button id="bRec" style="width:100%;margin-top:10px">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'</button><label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"><button class="pri big" id="bSave" style="margin-top:12px">Save plot</button></div>';
@@ -1971,12 +2132,16 @@ function renderMeasure(){
   if(q('#fName'))q('#fName').oninput=function(){d.name=this.value;saveDraft()};
   if(q('#fPlace'))q('#fPlace').oninput=function(){d.place=this.value;saveDraft()};
   if(q('#fNotes'))q('#fNotes').oninput=function(){d.notes=this.value;saveDraft()};
-  document.querySelectorAll('.seg button').forEach(function(b){b.onclick=function(){if(busy)return;if(d.mode!==b.dataset.mode&&d.corners.length){choose('Switch mode?','This clears the corners you have so far.',[{label:'Switch',val:true,cls:'pri'},{label:'Keep',val:false}]).then(function(ok){if(ok){d.mode=b.dataset.mode;d.corners=[];d.holes=[];d.tape=null;saveDraft();renderMeasure();gcPhotos()}})}else{d.mode=b.dataset.mode;saveDraft();renderMeasure()}}});
-  if(q('#bCap'))q('#bCap').onclick=function(){startCapture()};
+  document.querySelectorAll('.seg button').forEach(function(b){b.onclick=function(){if(busy)return;if(d.mode!==b.dataset.mode&&d.corners.length){choose('Switch mode?','This clears the corners you have so far.',[{label:'Switch',val:true,cls:'pri'},{label:'Keep',val:false}]).then(function(ok){if(ok){d.mode=b.dataset.mode;d.corners=[];d.holes=[];d.tape=null;d.fp=null;saveDraft();renderMeasure();gcPhotos()}})}else{d.mode=b.dataset.mode;saveDraft();renderMeasure()}}});
+  if(q('#bCap'))q('#bCap').onclick=function(){
+    var g=S.gps,weak=g.watching&&g.acc!=null&&Date.now()-g.rx<=10000&&g.acc>8;
+    if(!weak){startCapture();return}
+    choose('GPS is weak','Now about \u00b1'+fl(g.acc,1)+'. A corner taken now can be further off than that. Wait for \u00b18 m or better, or place this corner on the satellite map.',[{label:'Wait for a better fix',val:'w',cls:'pri'},{label:'Place on the map',val:'m'},{label:'Capture anyway',val:'c'}]).then(function(v){if(v==='c')startCapture();else if(v==='m')placeOnMap()});
+  };
   if(q('#bUse'))q('#bUse').onclick=finishCapture;
   if(q('#bCancel'))q('#bCancel').onclick=cancelCapture;
   if(q('#bUndo'))q('#bUndo').onclick=function(){d.corners.pop();saveDraft();renderMeasure();gcPhotos()};
-  if(q('#bClear'))q('#bClear').onclick=function(){choose('Start over?','All corners of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){d.corners=[];d.holes=[];d.tape=null;saveDraft();renderMeasure();gcPhotos()}})};
+  if(q('#bClear'))q('#bClear').onclick=function(){choose('Start over?','All corners of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){d.corners=[];d.holes=[];d.tape=null;d.fp=null;saveDraft();renderMeasure();gcPhotos()}})};
   document.querySelectorAll('.corners button').forEach(function(b){b.onclick=function(){var i=+b.dataset.c;choose('Corner '+(i+1),(placed(d.corners[i])?'Placed without GPS, about ±':'Accuracy ±')+fl(d.corners[i].acc,1)+(placed(d.corners[i])?'.':' from '+d.corners[i].n+' readings.'),[{label:'Retake',val:'r',cls:'pri'},{label:'Delete',val:'d',cls:'danger'},{label:'Cancel',val:'c'}]).then(function(v){if(v==='r')startCapture(i);else if(v==='d'){d.corners.splice(i,1);saveDraft();renderMeasure();gcPhotos()}})}});
   if(q('#bWalk'))q('#bWalk').onclick=startWalk;
   if(q('#bWalkEnd'))q('#bWalkEnd').onclick=finishWalk;
@@ -1984,6 +2149,8 @@ function renderMeasure(){
   if(q('#bSave'))q('#bSave').onclick=savePlot;
   if(q('#bToMap'))q('#bToMap').onclick=function(){M.refit=true;S.tab='map';render()};
   if(q('#bTape'))q('#bTape').onclick=function(){tapeSheet()};
+  if(q('#bField'))q('#bField').onclick=fpSheet;
+  if(q('#bPlace'))q('#bPlace').onclick=placeOnMap;
   if(q('#bRec'))q('#bRec').onclick=function(){recSheet(d,renderMeasure)};
   updateLive();
 }
