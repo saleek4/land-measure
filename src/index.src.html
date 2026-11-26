@@ -82,6 +82,7 @@ body.maptab main{padding:0;max-width:none}
 .mtb button{flex:1;background:#fff;color:#16211a;box-shadow:0 1px 6px rgba(0,0,0,.45);padding:13px 4px;font-size:14px;white-space:nowrap}
 body.maptab #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 .mtb button.pri{background:#1f7a4d;color:#fff}
+.mtb .ur{flex:1.7;display:flex;gap:4px}.mtb .ur button{flex:1;padding:13px 2px}
 .mcard{background:rgba(255,255,255,.96);color:#16211a;border-radius:14px;padding:12px;box-shadow:0 1px 8px rgba(0,0,0,.45)}
 .mcard .mut{color:#4a5a4f}
 .edh{display:flex;align-items:center;gap:8px}.edh b{flex:0 0 auto}.edh .small{flex:1;min-width:0}.edh button{padding:6px 12px}
@@ -1107,10 +1108,31 @@ function editReveal(){
   if(mx>lim)panBy(0,-(mx-lim));else if(Math.min.apply(null,ys)<150)panBy(0,150-Math.min.apply(null,ys));
 }
 function editDone(A){var t=M.estk&&M.estk[M.estk.length-1];if(t)t.after=JSON.stringify(A);saveDraft();M.lastPanel='';mapBottom();scheduleDraw();editReveal()}
+// redo: every undo leaves a note of the state it undid; Redo puts that state back as long as nothing else changed in between
+function rdoPush(A,before,kind,obj){if(before===JSON.stringify(A))return;M.rdo=M.rdo||[];M.rdo.push({arr:A,before:before,after:JSON.stringify(A),kind:kind,obj:obj});if(M.rdo.length>60)M.rdo.shift()}
+function canRedo(){var A=act(),r=M.rdo&&M.rdo[M.rdo.length-1];if(!r)return false;if(r.arr===A&&r.after===JSON.stringify(A))return true;M.rdo=[];return false}
+function mapRedo(){
+  if(!canRedo()){toast('Nothing to redo');M.lastPanel='';mapBottom();return false}
+  var A=act(),r=M.rdo.pop();
+  A.splice.apply(A,[0,A.length].concat(JSON.parse(r.before)));
+  if(r.kind==='edit'&&r.obj){M.estk=M.estk||[];M.estk.push(r.obj)}else if(r.kind==='fit')M.undoFit=r.obj;else if(r.kind==='draw')M.undoDraw=r.obj;
+  if(M.edit&&M.edit.i>=A.length)M.edit=null;M.sel=M.edit&&M.edit.kind==='point'?M.edit.i:-1;
+  saveDraft();M.lastPanel='';mapBottom();scheduleDraw();gcPhotos();return true;
+}
+function mapUndo(){
+  var A=act();if(editUndo())return;
+  var before=JSON.stringify(A),uf=M.undoFit;
+  if(uf&&uf.arr===A&&A[uf.i]&&A[uf.i].lat===uf.lat&&A[uf.i].lon===uf.lon){A[uf.i]=uf.prev;M.undoFit=null;rdoPush(A,before,'fit',uf);M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();return}
+  var ud=M.undoDraw,kind='pop';
+  if(ud&&ud.arr===A&&A.length===ud.len){A.splice.apply(A,[0,A.length].concat(ud.prev));M.undoDraw=null;kind='draw'}else A.pop();
+  rdoPush(A,before,kind,kind==='draw'?ud:null);
+  M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();gcPhotos();
+}
 function editUndo(){
   var A=act(),t=M.estk&&M.estk[M.estk.length-1];
   if(!t||t.arr!==A||t.after!==JSON.stringify(A))return false;
-  A.splice.apply(A,[0,A.length].concat(JSON.parse(t.snap)));M.estk.pop();
+  var before=JSON.stringify(A);
+  A.splice.apply(A,[0,A.length].concat(JSON.parse(t.snap)));M.estk.pop();rdoPush(A,before,'edit',t);
   if(M.edit&&M.edit.i>=A.length)M.edit=null;M.sel=M.edit&&M.edit.kind==='point'?M.edit.i:-1;
   saveDraft();M.lastPanel='';mapBottom();scheduleDraw();return true;
 }
@@ -1174,7 +1196,7 @@ function editCardHTML(){
      +chipsHTML('eSt',ls.map(function(x){return x.l}),li,'Length step')
      +chipsHTML('eAS',ANGS.map(function(x){return x+'°'}),ai,'Angle step')
      +chipsHTML('eEnd',['point '+(j+1),'point '+(e.i+1),'both'],mode==='B'?0:mode==='A'?1:2,'Moves')
-     +'<div class="row" style="margin-top:8px"><button id="eMid">&#65291; Point in the middle</button><button id="eUn">&#8630; Undo edit</button></div>';
+     +'<div class="row" style="margin-top:8px"><button id="eMid">&#65291; Point in the middle</button><button id="eUn">&#8630; Undo edit</button>'+(canRedo()?'<button id="eRe">&#8631; Redo</button>':'')+'</div>';
   }else{
     var ang=n>=3?interiorAt(R,e.i):null,pv=(e.i+n-1)%n,nx=(e.i+1)%n,l1=Math.hypot(R.P[e.i].x-R.P[pv].x,R.P[e.i].y-R.P[pv].y),l2=Math.hypot(R.P[nx].x-R.P[e.i].x,R.P[nx].y-R.P[e.i].y),tab=M.etab==='ang'&&ang!=null?'ang':'move',pm=M.epn||'pt';
     var sr=function(k,d,L){return'<div class="edr sm"><span>to '+(k+1)+'</span><button data-sl="'+d+'" data-d="-1">&minus;</button><input id="eS'+d+'" inputmode="decimal" value="'+(inFt()?L*FT:L).toFixed(2)+'" aria-label="Distance to point '+(k+1)+'"><button data-sl="'+d+'" data-d="1">+</button></div>'};
@@ -1186,7 +1208,7 @@ function editCardHTML(){
     else h+='<div class="edr"><span>Angle</span><button data-a="-1">&minus;</button><input id="eA" inputmode="decimal" value="'+ang.toFixed(1)+'" aria-label="Corner angle"><button data-a="1">+</button></div>'
       +chipsHTML('eAS',ANGS.map(function(x){return x+'°'}).concat(['90°']),ai,'Step')
       +chipsHTML('eEnd',['this point','side '+(nx+1),'side '+(pv+1)],pm==='pt'?0:pm==='next'?1:2,'Moves');
-    h+='<div class="row" style="margin-top:8px"><button id="eNote">Note / photo</button><button id="eDel" class="danger">Delete</button><button id="eUn">&#8630; Undo edit</button></div>';
+    h+='<div class="row" style="margin-top:8px"><button id="eNote">'+(canRedo()?'Note':'Note / photo')+'</button><button id="eDel" class="danger">Delete</button><button id="eUn">&#8630; Undo'+(canRedo()?'':' edit')+'</button>'+(canRedo()?'<button id="eRe">&#8631; Redo</button>':'')+'</div>';
   }
   return'<div class="mcard">'+h+'</div>';
 }
@@ -1196,6 +1218,7 @@ function bindEdit(el){
   var mode=function(){return M.eend||'B'};
   q('#eDone').onclick=function(){M.edit=null;M.sel=-1;MS.add='tap';saveView();M.lastPanel='';mapBottom();scheduleDraw()};
   q('#eUn').onclick=function(){if(!editUndo())toast('Nothing to undo')};
+  if(q('#eRe'))q('#eRe').onclick=mapRedo;
   var chips=function(id,fn){var c=q(id);if(c)c.querySelectorAll('button').forEach(function(b){b.onclick=function(){fn(+b.dataset.s)}})};
   chips('#eSt',function(i){MS.estep=i;saveView();mapBottom()});
   chips('#eAS',function(i){if(e.kind==='point'&&i===ANGS.length){ptSetAngle(A,e.i,90,M.epn||'pt');return}MS.eang=i;saveView();mapBottom()});
@@ -1343,6 +1366,8 @@ function gcPhotos(){
   var used={};
   var scan=function(o){[o.corners].concat((o.holes||[]).map(function(h){return h.corners})).forEach(function(r){(r||[]).forEach(function(c){(c.ph||[]).forEach(function(id){used[id]=1})})})};
   S.plots.forEach(scan);scan(S.draft);
+  var scanS=function(t){(String(t||'').match(/"ph":\[[^\]]*\]/g)||[]).forEach(function(m){try{JSON.parse('{'+m+'}').ph.forEach(function(id){used[id]=1})}catch(e){}})};
+  (M.rdo||[]).forEach(function(r){scanS(r.before);scanS(r.after)});(M.estk||[]).forEach(function(t){scanS(t.snap);scanS(t.after)});(M.mrdo||[]).forEach(function(r){(r.c.ph||[]).forEach(function(id){used[id]=1})});
   phTx('readonly',function(st){return st.getAllKeys()}).then(function(keys){(keys||[]).forEach(function(k){if(!used[k])phDel(k)})}).catch(function(){});
 }
 function selectVertex(i){
@@ -1508,11 +1533,12 @@ function mapBottom(){
   }else if(M.edit&&!M.view&&M.ring<0&&MS.add==='edit'&&(h=editCardHTML())){
     // edit card rendered by editCardHTML
   }else if(M.ring>=0&&!M.view){
-    h='<div class="mcard"><b>Excluded area '+(M.ring+1)+'</b><div class="tiny">Tap the corners of the house, pond or road you want to take out. It turns red and is subtracted from the plot.</div><div class="row" style="margin-top:8px"><button id="hUndo"'+(A.length?'':' disabled')+'>&#8630; Undo</button><button class="pri" id="hDone">Done</button></div></div>';
+    h='<div class="mcard"><b>Excluded area '+(M.ring+1)+'</b><div class="tiny">Tap the corners of the house, pond or road you want to take out. It turns red and is subtracted from the plot.</div><div class="row" style="margin-top:8px"><button id="hUndo"'+(A.length?'':' disabled')+'>&#8630; Undo</button>'+(canRedo()?'<button id="hRedo">&#8631; Redo</button>':'')+'<button class="pri" id="hDone">Done</button></div></div>';
   }else if(M.view){
     h='<div class="mtb"><button id="mBack">&larr; Back to plot</button><button id="mSplitV">&#9986; Split</button><button class="pri" id="mCopy">Edit a copy</button></div>';
   }else{
-    h='<div class="mtb"><button id="mUndo"'+(d.corners.length?'':' disabled')+'>&#8630; Undo</button><button id="mGps">&#128205; GPS'+(MS.add==='centre'?'':' point')+'</button>'+(MS.add==='centre'?'<button class="pri" id="mAdd">&#65291; Add</button>':'')+''+(MS.add==='centre'?'':(MS.add==='draw'||d.corners.length<3)?'<button id="mDraw"'+(MS.add==='draw'?' class="pri"':'')+'>&#9998; Draw</button>':'<button id="mEdit"'+(MS.add==='edit'?' class="pri"':'')+'>&#10021; Edit</button>')+'<button id="mTools">&#9986; Tools</button><button id="mSave"'+(d.corners.length>=3?' class="pri"':'')+'>Save</button></div>';
+    var rd=canRedo();
+    h='<div class="mtb">'+(rd?'<div class="ur"><button id="mUndo" aria-label="Undo"'+(d.corners.length?'':' disabled')+'>&#8630;</button><button id="mRedo" aria-label="Redo">&#8631; Redo</button></div>':'<button id="mUndo"'+(d.corners.length?'':' disabled')+'>&#8630; Undo</button>')+'<button id="mGps">&#128205; GPS'+(MS.add==='centre'?'':' point')+'</button>'+(MS.add==='centre'?'<button class="pri" id="mAdd">&#65291; Add</button>':'')+''+(MS.add==='centre'?'':(MS.add==='draw'||d.corners.length<3)?'<button id="mDraw"'+(MS.add==='draw'?' class="pri"':'')+'>&#9998; Draw</button>':'<button id="mEdit"'+(MS.add==='edit'?' class="pri"':'')+'>&#10021; Edit</button>')+'<button id="mTools">&#9986; Tools</button><button id="mSave"'+(d.corners.length>=3?' class="pri"':'')+'>Save</button></div>';
   }
   el.innerHTML=h;
   var q=function(s){return el.querySelector(s)};
@@ -1520,7 +1546,8 @@ function mapBottom(){
   if(q('#mCan'))q('#mCan').onclick=cancelCapture;
   if(q('#mWEnd'))q('#mWEnd').onclick=finishWalk;
   if(q('#mWCan'))q('#mWCan').onclick=cancelWalk;
-  if(q('#mUndo'))q('#mUndo').onclick=function(){var A=act();if(editUndo())return;var uf=M.undoFit;if(uf&&uf.arr===A&&A[uf.i]&&A[uf.i].lat===uf.lat&&A[uf.i].lon===uf.lon){A[uf.i]=uf.prev;M.undoFit=null;M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();return}if(M.undoDraw&&M.undoDraw.arr===A&&A.length===M.undoDraw.len){A.splice.apply(A,[0,A.length].concat(M.undoDraw.prev));M.undoDraw=null}else A.pop();M.sel=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()};
+  if(q('#mUndo'))q('#mUndo').onclick=mapUndo;
+  if(q('#mRedo'))q('#mRedo').onclick=mapRedo;
   if(q('#mEdit'))q('#mEdit').onclick=function(){MS.add=MS.add==='edit'?'tap':'edit';M.edit=null;M.sel=-1;M.lastPanel='';saveView();if(MS.add==='edit')toast('Tap a side or a point to edit it');mapBottom();scheduleDraw()};
   if(M.edit&&el.querySelector('#eDone'))bindEdit(el);
   if(q('#mDraw'))q('#mDraw').onclick=function(){MS.add=MS.add==='draw'?'tap':'draw';M.lastPanel='';saveView();if(MS.add==='draw')toast('Draw the outline with one finger. Two fingers move or zoom the map.');mapBottom();scheduleDraw()};
@@ -1534,7 +1561,8 @@ function mapBottom(){
   if(q('#mSplitV'))q('#mSplitV').onclick=function(){openSplit()};
   if(q('#mSave'))q('#mSave').onclick=mapSave;
   if(q('#mBack'))q('#mBack').onclick=function(){var id=M.view.id;M.view=null;S.tab='plots';S.viewId=id;render()};
-  if(q('#hUndo'))q('#hUndo').onclick=function(){A.pop();M.sel=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()};
+  if(q('#hUndo'))q('#hUndo').onclick=function(){var b=JSON.stringify(A);A.pop();rdoPush(A,b,'pop',null);M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();gcPhotos()};
+  if(q('#hRedo'))q('#hRedo').onclick=mapRedo;
   if(q('#hDone'))q('#hDone').onclick=endHole;
   if(q('#mvDone'))q('#mvDone').onclick=function(){M.mv=false;M.lastPanel='';mapBottom();scheduleDraw()};
   el.querySelectorAll('[data-mv]').forEach(function(b){b.onclick=function(){var d=lenSteps()[Math.min(MS.estep==null?1:MS.estep,3)].m,k=b.dataset.mv;shiftMetres(k==='E'?d:k==='W'?-d:0,k==='N'?d:k==='S'?-d:0)}});
@@ -2092,6 +2120,7 @@ document.addEventListener('click',function(e){
 });
 document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){leaveModes();S.tab=b.dataset.tab;S.viewId=null;M.view=null;render()}});
 
+function canMRedo(){var r=M.mrdo&&M.mrdo[M.mrdo.length-1];if(r&&r.len===S.draft.corners.length)return true;M.mrdo=[];return false}
 function renderMeasure(){
   if(S.tab!=='measure')return;
   var d=S.draft,n=d.corners.length,an=anOf(d),busy=!!(S.cap||S.walk);
@@ -2106,7 +2135,7 @@ function renderMeasure(){
       h+='<div><b>Capturing corner '+idx+'</b>. Stand still at the corner.</div><div class="bar"><i id="capbar"></i></div><div class="mut small" id="captxt">Starting…</div><div class="row" style="margin-top:12px"><button class="pri" id="bUse">Use now</button><button id="bCancel">Cancel</button></div>';
     }else{
       h+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark. Hold the phone steady in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving. Go around the plot in order. No GPS? Use the satellite map instead.</div><button id="bPlace" style="width:100%;margin-top:10px">&#128205; GPS weak here? Place corner '+(n+1)+' on the satellite map</button>';
-      if(n){h+='<div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">Undo last</button><button id="bClear" class="danger">Start over</button></div>'}
+      if(n){h+='<div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">Undo last</button>'+(canMRedo()?'<button id="bRedo">Redo</button>':'')+'<button id="bClear" class="danger">Start over</button></div>'}
     }
   }else{
     if(S.walk){
@@ -2140,8 +2169,9 @@ function renderMeasure(){
   };
   if(q('#bUse'))q('#bUse').onclick=finishCapture;
   if(q('#bCancel'))q('#bCancel').onclick=cancelCapture;
-  if(q('#bUndo'))q('#bUndo').onclick=function(){d.corners.pop();saveDraft();renderMeasure();gcPhotos()};
-  if(q('#bClear'))q('#bClear').onclick=function(){choose('Start over?','All corners of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){d.corners=[];d.holes=[];d.tape=null;d.fp=null;saveDraft();renderMeasure();gcPhotos()}})};
+  if(q('#bUndo'))q('#bUndo').onclick=function(){var c=d.corners.pop();M.mrdo=M.mrdo||[];M.mrdo.push({c:c,len:d.corners.length});saveDraft();renderMeasure();gcPhotos()};
+  if(q('#bRedo'))q('#bRedo').onclick=function(){if(!canMRedo())return;d.corners.push(M.mrdo.pop().c);saveDraft();renderMeasure()};
+  if(q('#bClear'))q('#bClear').onclick=function(){choose('Start over?','All corners of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){M.mrdo=[];d.corners=[];d.holes=[];d.tape=null;d.fp=null;saveDraft();renderMeasure();gcPhotos()}})};
   document.querySelectorAll('.corners button').forEach(function(b){b.onclick=function(){var i=+b.dataset.c;choose('Corner '+(i+1),(placed(d.corners[i])?'Placed without GPS, about ±':'Accuracy ±')+fl(d.corners[i].acc,1)+(placed(d.corners[i])?'.':' from '+d.corners[i].n+' readings.'),[{label:'Retake',val:'r',cls:'pri'},{label:'Delete',val:'d',cls:'danger'},{label:'Cancel',val:'c'}]).then(function(v){if(v==='r')startCapture(i);else if(v==='d'){d.corners.splice(i,1);saveDraft();renderMeasure();gcPhotos()}})}});
   if(q('#bWalk'))q('#bWalk').onclick=startWalk;
   if(q('#bWalkEnd'))q('#bWalkEnd').onclick=finishWalk;
