@@ -37,6 +37,15 @@ button:disabled{opacity:.5}
 .seg button{flex:1;background:transparent;padding:9px}.seg button.on{background:var(--acc);color:var(--accInk)}
 .corners{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
 .corners button{padding:7px 11px;font-size:14px;border-radius:999px}
+.nm{display:flex;gap:8px;padding:10px}.nm input{flex:1;min-width:0}
+.sumc{display:flex;align-items:center;gap:12px;justify-content:space-between}.sumc button{flex:0 0 auto;padding:14px 20px}
+.sumn{font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1}.sumn small{font-size:15px;font-weight:600;color:var(--mut)}
+details.tip{margin-top:6px}details.tip summary{font-size:13px;color:var(--mut);cursor:pointer;padding:4px 0}details.tip div{margin-top:4px}
+button.lnk{width:100%;margin-top:6px;background:transparent;color:var(--acc);font-size:14px;padding:9px 6px}
+.opts{margin-bottom:4px}
+button.opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-top:8px;padding:14px;background:var(--card);border:1px solid var(--line);font-weight:400}
+button.opt .ic{flex:0 0 34px;font-size:26px;text-align:center}
+button.opt b{display:block;font-size:16px;font-weight:700}button.opt small{display:block;color:var(--mut);font-size:13px;margin-top:2px}
 .mut{color:var(--mut);font-size:14px}
 .small{font-size:13px}
 .bar{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:10px 0 6px}
@@ -72,7 +81,7 @@ body.maptab main{padding:0;max-width:none}
 #mpanel .b{font-size:13px;opacity:.93;margin-top:2px}
 #mpanel .c{font-size:12.5px;margin-top:3px;color:#ffd23f}
 #mctl{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:8px;z-index:2}
-#mmc{display:block;width:100%;height:210px;background:#26302a}.mmg{position:absolute;right:8px;top:8px;padding:7px 12px;font-size:13px;border-radius:18px;background:#fff;color:#16211a;box-shadow:0 1px 6px rgba(0,0,0,.45)}.mmk{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px;margin-right:3px}
+#mmc{display:block;width:100%;height:140px;background:#26302a}.mmg{position:absolute;right:8px;top:8px;padding:7px 12px;font-size:13px;border-radius:18px;background:#fff;color:#16211a;box-shadow:0 1px 6px rgba(0,0,0,.45)}.mmk{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px;margin-right:3px}
 .mc{width:44px;height:44px;padding:0;border-radius:22px;background:#fff;color:#16211a;font-size:20px;line-height:1;box-shadow:0 1px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
 #mbot{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;z-index:2}
 #minfo{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;color:#fff;font-size:10.5px;line-height:1.25;text-shadow:0 0 3px #000,0 0 3px #000;pointer-events:none}
@@ -109,6 +118,9 @@ body.maptab #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 #mpop .small{font-size:12px;color:#4a5a4f;margin-top:8px}
 .recbox{border-radius:10px;padding:9px 12px;font-size:14px;margin-top:10px;background:var(--soft);border:1px solid var(--line)}
 .recbox.off{background:rgba(183,121,31,.14);border-color:var(--warn)}
+.tgrp{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:14px 2px 0}.tgrp:first-of-type{margin-top:6px}
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tools button{margin-top:0!important;padding:11px 12px}.tools button small{font-size:12px!important}
+.tools button:last-child:nth-child(odd){grid-column:span 2}
 .tools button{display:block;width:100%;text-align:left;margin-top:8px;font-weight:600}
 .tools button small{display:block;font-weight:400;color:var(--mut);font-size:13px;margin-top:2px}
 .ideas{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
@@ -1538,7 +1550,7 @@ function mapBottom(){
     h='<div class="mtb"><button id="mBack">&larr; Back to plot</button><button id="mSplitV">&#9986; Split</button><button class="pri" id="mCopy">Edit a copy</button></div>';
   }else{
     var rd=canRedo();
-    h='<div class="mtb">'+(rd?'<div class="ur"><button id="mUndo" aria-label="Undo"'+(d.corners.length?'':' disabled')+'>&#8630;</button><button id="mRedo" aria-label="Redo">&#8631; Redo</button></div>':'<button id="mUndo"'+(d.corners.length?'':' disabled')+'>&#8630; Undo</button>')+'<button id="mGps">&#128205; GPS'+(MS.add==='centre'?'':' point')+'</button>'+(MS.add==='centre'?'<button class="pri" id="mAdd">&#65291; Add</button>':'')+''+(MS.add==='centre'?'':(MS.add==='draw'||d.corners.length<3)?'<button id="mDraw"'+(MS.add==='draw'?' class="pri"':'')+'>&#9998; Draw</button>':'<button id="mEdit"'+(MS.add==='edit'?' class="pri"':'')+'>&#10021; Edit</button>')+'<button id="mTools">&#9986; Tools</button><button id="mSave"'+(d.corners.length>=3?' class="pri"':'')+'>Save</button></div>';
+    h='<div class="mtb">'+(rd?'<div class="ur"><button id="mUndo" aria-label="Undo"'+(d.corners.length?'':' disabled')+'>&#8630;</button><button id="mRedo" aria-label="Redo">&#8631; Redo</button></div>':'<button id="mUndo"'+(d.corners.length?'':' disabled')+'>&#8630; Undo</button>')+'<button id="mGps">&#128205; GPS'+(MS.add==='centre'?'':' point')+'</button>'+(MS.add==='centre'?'<button class="pri" id="mAdd">&#65291; Add</button>':'')+''+(MS.add==='centre'?'':(MS.add==='draw'||d.corners.length<3)?'<button id="mDraw"'+(MS.add==='draw'?' class="pri"':'')+'>&#9998; Draw</button>':'<button id="mEdit"'+(MS.add==='edit'?' class="pri"':'')+'>&#10021; Edit</button>')+'<button id="mTools">&#128736; Tools</button><button id="mSave"'+(d.corners.length>=3?' class="pri"':'')+'>Save</button></div>';
   }
   el.innerHTML=h;
   var q=function(s){return el.querySelector(s)};
@@ -1586,16 +1598,19 @@ function leaveModes(){
 }
 function toolsSheet(){
   var o=cobj(),ok=o.corners.length>=3,hs=o.holes||[];
-  sheet('<h3>Tools</h3><div class="tools">'
-    +'<button id="tSplit"'+(ok?'':' disabled')+'>&#9986; Split this plot<small>Ideas to divide the land into parts: equal parts, ratio, cents, road strip.</small></button>'
-    +'<button id="tHole"'+(ok?'':' disabled')+'>&#10134; Exclude an area<small>Mark a house, pond or road inside the plot and take it out of the area.</small></button>'
-    +(hs.length?'<button id="tHoles">Excluded areas ('+hs.length+')<small>Edit or remove</small></button>':'')
-    +'<button id="tRec"'+(ok?'':' disabled')+'>&#128203; Record area<small>'+(o.rec?'Record: '+fa(o.rec.a,o.rec.u)+' '+UNIT[o.rec.u].l+'. Tap to change.':'Type the area from the deed or Ente Bhoomi and compare it with this measurement.')+'</small></button>'
-    +'<button id="tEdit"'+(o.corners.length>=2?'':' disabled')+'>&#10021; Edit sides and points<small>Tap a side or a point. Change a length or an angle with + and &minus; buttons, nudge a point with arrows, add a point in the middle of a side.</small></button>'
-    +'<button id="tFit"'+(ok?'':' disabled')+'>&#127919; Fit to a wanted area<small>Type the area you want (say 94 cent). The app adds or moves one point so the plot comes to exactly that.</small></button>'
-    +'<button id="tTape">&#128208; Enter tape lengths<small>Type the side lengths measured with a tape. The plot is drawn from them.</small></button>'
-    +'<button id="tField"'+(!M.view&&o.mode==='corners'&&o.corners.length>=3&&o.corners.length<=12?'':' disabled')+'>&#129517; Field plan<small>Steps to check the draft on the ground with a tape: which corners to mark, which sides and crosses to measure, in the fewest readings.</small></button>'
-    +'<button id="tMove"'+(ok?'':' disabled')+'>&#10021; Move or turn the plot<small>For a plot drawn from tape lengths: slide it onto the right place and turn it.</small></button>'
+  var fieldOk=!M.view&&o.mode==='corners'&&o.corners.length>=3&&o.corners.length<=12;
+  sheet('<h3>Tools</h3><div class="tgrp">Fix the shape</div><div class="tools">'
+    +'<button id="tEdit"'+(o.corners.length>=2?'':' disabled')+'>&#10021; Edit sides and points<small>Change a length or angle, nudge or add a point.</small></button>'
+    +'<button id="tFit"'+(ok?'':' disabled')+'>&#127919; Fit to a wanted area<small>Say 94 cent; one point moves to match.</small></button>'
+    +'<button id="tMove"'+(ok?'':' disabled')+'>&#128260; Move or turn<small>Slide the plot onto the right place.</small></button>'
+    +'</div><div class="tgrp">Divide the land</div><div class="tools">'
+    +'<button id="tSplit"'+(ok?'':' disabled')+'>&#9986; Split this plot<small>Equal parts, ratio, cents, road strip.</small></button>'
+    +'<button id="tHole"'+(ok?'':' disabled')+'>&#10134; Exclude an area<small>Take a house, pond or road out.</small></button>'
+    +(hs.length?'<button id="tHoles">Excluded areas ('+hs.length+')<small>Edit or remove.</small></button>':'')
+    +'</div><div class="tgrp">Check and compare</div><div class="tools">'
+    +'<button id="tRec"'+(ok?'':' disabled')+'>&#128203; Record area<small>'+(o.rec?'Record: '+fa(o.rec.a,o.rec.u)+' '+UNIT[o.rec.u].l+'. Tap to change.':'Compare with the deed or Ente Bhoomi.')+'</small></button>'
+    +'<button id="tTape">&#128208; Tape / sketch lengths<small>Draw the plot from side lengths.</small></button>'
+    +'<button id="tField"'+(fieldOk?'':' disabled')+'>&#129517; Field plan<small>Check the draft on the ground with a tape.</small></button>'
     +'</div><div class="row"><button id="tClose">Close</button></div>');
   var q=function(s){return $(s)};
   q('#tClose').onclick=closeSheet;
@@ -2124,33 +2139,39 @@ function canMRedo(){var r=M.mrdo&&M.mrdo[M.mrdo.length-1];if(r&&r.len===S.draft.
 function renderMeasure(){
   if(S.tab!=='measure')return;
   var d=S.draft,n=d.corners.length,an=anOf(d),busy=!!(S.cap||S.walk);
-  var h='<div class="card"><label>Plot name</label><input id="fName" placeholder="e.g. Home plot" value="'+esc(d.name)+'" autocomplete="off">';
-  h+='<label>Place</label><input id="fPlace" placeholder="e.g. Malappuram, Village / survey no." value="'+esc(d.place)+'" autocomplete="off">';
-  h+='<div class="seg"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Corner points</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk boundary</button></div></div>';
-  h+='<div class="card" id="mmCard" style="padding:0;overflow:hidden"><div style="position:relative"><canvas id="mmc" aria-label="Satellite map of your corners"></canvas><button class="mmg" id="mmGps">&#128205; Show where I am</button></div><div id="mmInfo" class="small" style="padding:9px 12px"></div></div>';
-  h+='<div class="card"><h2>'+(d.mode==='corners'?'Corners':'Walk')+'</h2>';
+  var u0=S.settings.unit;
+  var h='<div class="card nm"><input id="fName" aria-label="Plot name" placeholder="Plot name" value="'+esc(d.name)+'" autocomplete="off"><input id="fPlace" aria-label="Place" placeholder="Place / survey no." value="'+esc(d.place)+'" autocomplete="off"></div>';
+  h+='<div class="card" id="mmCard" style="padding:0;overflow:hidden"><div style="position:relative"><canvas id="mmc" aria-label="Satellite map of your corners"></canvas><button class="mmg" id="mmGps">&#128205; Show where I am</button></div><div id="mmInfo" class="small" style="padding:8px 12px"></div></div>';
+  if(an&&!busy)h+='<div class="card sumc"><div><div class="sumn">'+fa(an.net,u0)+' <small>'+UNIT[u0].l+'</small></div><div class="mut small">'+n+' points &middot; error about ±'+(an.rel*100).toFixed(1)+'%</div></div><button class="pri" id="bSave">Save plot</button></div>';
+  h+='<div class="card"><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>&#128205; Corner points</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>&#128694; Walk boundary</button></div>';
   if(d.mode==='corners'){
     if(S.cap){
       var idx=S.cap.replace>=0?S.cap.replace+1:n+1;
       h+='<div><b>Capturing corner '+idx+'</b>. Stand still at the corner.</div><div class="bar"><i id="capbar"></i></div><div class="mut small" id="captxt">Starting…</div><div class="row" style="margin-top:12px"><button class="pri" id="bUse">Use now</button><button id="bCancel">Cancel</button></div>';
     }else{
-      h+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark. Hold the phone steady in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving. Go around the plot in order. No GPS? Use the satellite map instead.</div><button id="bPlace" style="width:100%;margin-top:10px">&#128205; GPS weak here? Place corner '+(n+1)+' on the satellite map</button>';
-      if(n){h+='<div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">Undo last</button>'+(canMRedo()?'<button id="bRedo">Redo</button>':'')+'<button id="bClear" class="danger">Start over</button></div>'}
+      h+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark and hold the phone steady. Go round the plot in order.</div>'+(n?'':'<details class="tip"><summary>Tips for a good reading</summary><div class="mut small">Hold the phone in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving.</div></details>');
+      if(n){h+='<button id="bPlace" class="lnk">&#128205; GPS weak? Place corner '+(n+1)+' on the satellite map</button><div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">&#8630; Undo last</button>'+(canMRedo()?'<button id="bRedo">&#8631; Redo</button>':'')+'<button id="bClear" class="danger">Start over</button></div>'}
     }
   }else{
     if(S.walk){
       h+='<div><b>Walking…</b> Follow the boundary and return to where you started.</div><div class="mut small" id="walktxt" style="margin:8px 0">Waiting for GPS…</div><div class="row"><button class="pri" id="bWalkEnd">Finish</button><button id="bWalkCancel">Cancel</button></div>';
     }else{
-      h+='<button class="pri big" id="bWalk">'+(n?'Walk again':'Start walking')+'</button><div class="mut small" style="margin-top:8px">Start at one corner, walk slowly along the boundary, come back to the start, then tap Finish. Good for large plots. Corners get slightly rounded.</div>';
+      h+='<button class="pri big" id="bWalk">'+(n?'Walk again':'Start walking')+'</button><div class="mut small" style="margin-top:8px">Start at one corner, walk slowly along the boundary, come back to the start, then tap Finish.</div><details class="tip"><summary>When to use this</summary><div class="mut small">Good for large plots. Corners get slightly rounded.</div></details>';
       if(n)h+='<div class="row" style="margin-top:12px"><button id="bClear" class="danger">Start over</button></div>';
     }
   }
-  if(!busy)h+='<button id="bToMap" style="width:100%;margin-top:12px">&#128752;&#65039; '+(n?'View on satellite map':'Mark on satellite map (no GPS needed)')+'</button><button id="bTape" style="width:100%;margin-top:8px">&#128208; Enter tape lengths</button>'+(d.mode==='corners'&&n>=3&&n<=12?'<button id="bField" style="width:100%;margin-top:8px">&#129517; Field plan: check with a tape</button>':'');
   h+='</div>';
+  if(!busy){
+    h+='<div class="opts">'
+      +'<button id="bToMap" class="opt"><span class="ic">&#128752;&#65039;</span><span><b>'+(n?'View on satellite map':'Mark on satellite map')+'</b><small>'+(n?'See, drag and edit the corners.':'Tap the corners on the map. No GPS needed.')+'</small></span></button>'
+      +'<button id="bTape" class="opt"><span class="ic">&#128208;</span><span><b>Tape / sketch lengths</b><small>Type the side lengths from a tape or your sketch.</small></span></button>'
+      +(d.mode==='corners'&&n>=3&&n<=12?'<button id="bField" class="opt"><span class="ic">&#129517;</span><span><b>Field plan</b><small>Check this draft on the ground with a tape.</small></span></button>':'')
+      +'</div>';
+  }
   if(an&&!busy){
-    h+='<div class="card"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<button id="bRec" style="width:100%;margin-top:10px">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'</button><label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"><button class="pri big" id="bSave" style="margin-top:12px">Save plot</button></div>';
-  }else if(!busy){
-    h+='<div class="mut small" style="padding:0 4px">Need at least 3 corners to calculate the area.</div>';
+    h+='<div class="card" style="margin-top:12px"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<button id="bRec" style="width:100%;margin-top:10px">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'</button><label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"></div>';
+  }else if(!busy&&n){
+    h+='<div class="mut small" style="padding:8px 4px 0">Need at least 3 corners to calculate the area.</div>';
   }
   $('#app').innerHTML=h;
   M.mm=$('#mmc');M.mmRaf=0;
