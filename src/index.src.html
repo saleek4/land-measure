@@ -37,6 +37,8 @@ button:disabled{opacity:.5}
 .seg button{flex:1;background:transparent;padding:9px}.seg button.on{background:var(--acc);color:var(--accInk)}
 .corners{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
 .corners button{padding:7px 11px;font-size:14px;border-radius:999px}
+.segc{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:3px;margin-top:8px}.segc button{flex:1;background:transparent;padding:9px 4px;font-size:14px}.segc button.on{background:var(--acc);color:var(--accInk)}
+#sheet button.rm{display:block;width:100%;margin-top:4px;padding:5px;font-size:12px;background:transparent;color:var(--bad)}
 .nm{display:flex;gap:8px;padding:10px}.nm input{flex:1;min-width:0}
 .sumc{display:flex;align-items:center;gap:12px;justify-content:space-between}.sumc button{flex:0 0 auto;padding:14px 20px}
 .sumn{font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1}.sumn small{font-size:15px;font-weight:600;color:var(--mut)}
@@ -347,6 +349,54 @@ function tapeSolve(sides,diags,off){
 }
 // crosses: n corners need n-3 diagonals. They fan out from one hub corner h to the corners h+2 ... h+n-2.
 function tapeCross(n,h){var o=[];for(var k=2;k<=n-2;k++)o.push([h,(h+k)%n]);return o}
+// any set of crosses (a sketch): crs = n-3 pairs of corner numbers (0-based) that split the plot into triangles without crossing each other
+function tapeKey(a,b){return Math.min(a,b)+'-'+Math.max(a,b)}
+function tapeTriCheck(n,crs){
+  var seen={},i,j,a,b,c,d;
+  for(i=0;i<crs.length;i++){a=Math.min(crs[i][0],crs[i][1]);b=Math.max(crs[i][0],crs[i][1]);
+    if(a===b||b-a===1||(a===0&&b===n-1))return{ok:false,err:'Corners '+(a+1)+' and '+(b+1)+' are already joined by a side, so that is not a cross'};
+    if(seen[a+'-'+b])return{ok:false,err:'The cross '+(a+1)+' to '+(b+1)+' is listed twice'};seen[a+'-'+b]=1}
+  for(i=0;i<crs.length;i++)for(j=i+1;j<crs.length;j++){
+    a=Math.min(crs[i][0],crs[i][1]);b=Math.max(crs[i][0],crs[i][1]);c=Math.min(crs[j][0],crs[j][1]);d=Math.max(crs[j][0],crs[j][1]);
+    if((a<c&&c<b&&b<d)||(c<a&&a<d&&d<b))return{ok:false,err:'The crosses '+(a+1)+' to '+(b+1)+' and '+(c+1)+' to '+(d+1)+' cut through each other. Crosses can meet at a corner but not in the middle'}}
+  if(crs.length<n-3){var m=n-3-crs.length;return{ok:false,more:m,err:'Choose '+m+' more cross'+(m===1?'':'es')+': '+n+' corners need '+(n-3)}}
+  if(crs.length>n-3)return{ok:false,err:'Too many crosses: '+n+' corners need exactly '+(n-3)+'. Remove '+(crs.length-(n-3))};
+  var known={};for(i=0;i<n;i++)known[tapeKey(i,(i+1)%n)]=1;crs.forEach(function(p){known[tapeKey(p[0],p[1])]=1});
+  var poly=[],ears=[];for(i=0;i<n;i++)poly.push(i);
+  while(poly.length>3){var L=poly.length,at=-1;
+    for(i=0;i<L;i++){if(known[tapeKey(poly[(i+L-1)%L],poly[(i+1)%L])]){at=i;break}}
+    if(at<0)return{ok:false,err:'These crosses do not split the plot into triangles'};
+    ears.push([poly[(at+L-1)%L],poly[at],poly[(at+1)%L]]);poly.splice(at,1)}
+  ears.push([poly[0],poly[1],poly[2]]);
+  return{ok:true,ears:ears};
+}
+function tapeFin(P){
+  var n=P.length,per=0;for(var i=0;i<n;i++){var p=P[i],q=P[(i+1)%n];per+=Math.hypot(q.x-p.x,q.y-p.y)}
+  var warn=null;if(selfCross(P))warn='These lengths make a shape whose sides cross. Check the order of the points.';
+  return{ok:true,P:P,area:Math.abs(polyArea(P)),per:per,warn:warn};
+}
+// sides[i] joins corner i and i+1 (the last closes to corner 0); lens[k] = length of cross crs[k]. Corners are numbered counter-clockwise.
+function tapeSolveTri(sides,crs,lens){
+  var n=sides.length;if(n<3)return{ok:false,err:'Need at least 3 sides'};
+  if(sides.some(function(v){return!(v>0)}))return{ok:false,err:'Every side must be more than zero'};
+  var chk=tapeTriCheck(n,crs);if(!chk.ok)return chk;
+  var len={},i;for(i=0;i<n;i++)len[tapeKey(i,(i+1)%n)]=sides[i];
+  for(i=0;i<crs.length;i++){if(!(lens[i]>0))return{ok:false,err:'Type the length of the cross from corner '+(crs[i][0]+1)+' to corner '+(crs[i][1]+1),need:i};len[tapeKey(crs[i][0],crs[i][1])]=lens[i]}
+  var P=new Array(n),e=chk.ears,last=e[e.length-1],a=last[0],b=last[1],c=last[2];
+  var dab=len[tapeKey(a,b)],dac=len[tapeKey(a,c)],dbc=len[tapeKey(b,c)];
+  var cx=(dac*dac-dbc*dbc+dab*dab)/(2*dab),h2=dac*dac-cx*cx;
+  if(h2<-1e-9*dab*dab)return{ok:false,err:'These lengths do not close up around corner '+(c+1)+'. Check the lengths of the sides and crosses there',bad:c};
+  P[a]={x:0,y:0};P[b]={x:dab,y:0};P[c]={x:cx,y:Math.sqrt(Math.max(0,h2))};
+  for(i=e.length-2;i>=0;i--){
+    var t=e[i],pa=P[t[0]],pb=P[t[2]],v=t[1],da=len[tapeKey(t[0],v)],db=len[tapeKey(v,t[2])],dx=pb.x-pa.x,dy=pb.y-pa.y,D=Math.hypot(dx,dy);
+    if(D<1e-9)return{ok:false,err:'Two corners fall on the same spot. Check the lengths',bad:v};
+    var ux=dx/D,uy=dy/D,xv=(da*da-db*db+D*D)/(2*D),hh=da*da-xv*xv;
+    if(hh<-1e-9*D*D)return{ok:false,err:'These lengths do not close up around corner '+(v+1)+'. Check the lengths of the sides and crosses there',bad:v};
+    var hv=Math.sqrt(Math.max(0,hh));
+    P[v]={x:pa.x+xv*ux+hv*uy,y:pa.y+xv*uy-hv*ux};
+  }
+  return tapeFin(P);
+}
 function tapeRot(a,h){var n=a.length;return a.map(function(_,i){return a[(i+h)%n]})}
 function tapeOrient(P){var a=P[0],b=P[1],th=Math.atan2(b.y-a.y,b.x-a.x),c=Math.cos(-th),s=Math.sin(-th);return P.map(function(p){var x=p.x-a.x,y=p.y-a.y;return{x:x*c-y*s,y:x*s+y*c}})}
 function triMin(a,b,c){var A=Math.hypot(b.x-c.x,b.y-c.y),B=Math.hypot(a.x-c.x,a.y-c.y),C=Math.hypot(a.x-b.x,a.y-b.y);if(A<1e-9||B<1e-9||C<1e-9)return 0;
@@ -366,10 +416,10 @@ function tapeBestHub(P){
   return best;
 }
 // typical error of a taped area: every length is off by about 3 cm + 0.2 %
-function tapeSigma(sides,diags){
-  var r0=tapeSolve(sides,diags);if(!r0.ok)return 0;
+function tapeSigma(sides,diags,solve){
+  solve=solve||tapeSolve;var r0=solve(sides,diags);if(!r0.ok)return 0;
   var seed=12345,rnd=function(){seed=(seed*1664525+1013904223)>>>0;return(seed+1)/4294967297},gauss=function(){return Math.sqrt(-2*Math.log(rnd()))*Math.cos(2*Math.PI*rnd())},areas=[];
-  for(var it=0;it<300;it++){var f=function(v){return v+gauss()*(0.03+0.002*v)},r=tapeSolve(sides.map(f),diags.map(f));if(r.ok)areas.push(r.area)}
+  for(var it=0;it<300;it++){var f=function(v){return v+gauss()*(0.03+0.002*v)},r=solve(sides.map(f),diags.map(f));if(r.ok)areas.push(r.area)}
   if(areas.length<30)return 0;var m=areas.reduce(function(a,b){return a+b},0)/areas.length,v=areas.reduce(function(a,b){return a+(b-m)*(b-m)},0)/areas.length;return Math.sqrt(v);
 }
 // tape shape -> map corners around (lat0,lon0); the first side points along compass bearing brg (degrees)
@@ -1746,17 +1796,20 @@ function recSheet(target,after){
 }
 
 // ---------- tape lengths ----------
-var TP={n:4,u:'m',sides:[],dm:{},hub:0,brg:0,mir:false,loaded:false,hint:''};
+var TP={n:4,u:'m',sides:[],dm:{},hub:0,brg:0,mir:false,loaded:false,hint:'',cr:null,sel:-1};
 function tkey(p){return Math.min(p[0],p[1])+'-'+Math.max(p[0],p[1])}
 function tapeVals(T){
   T=T||TP;var f=T.u==='ft'?0.3048:1,pv=function(t){var v=parseFloat(String(t||'').replace(',','.'));return v>0?v*f:NaN},n=T.n,h=T.hub%n,sides=[],diags=[];
   for(var i=0;i<n;i++)sides.push(pv(T.sides[i]));
-  tapeCross(n,h).forEach(function(p){diags.push(pv(T.dm[tkey(p)]))});
+  (T.cr||tapeCross(n,h)).forEach(function(p){diags.push(pv(T.dm[tkey(p)]))});
   return{sides:sides,diags:diags,hub:h};
 }
 function tapeCalc(T){
   T=T||TP;var v=tapeVals(T),n=T.n,h=v.hub,miss=v.sides.some(function(x){return!(x>0)});
+  if(T.cr&&n>=4){var ck=tapeTriCheck(n,T.cr);if(!ck.ok)return ck}
   if(miss)return{ok:false,err:'Type all '+T.n+' side lengths'};
+  if(T.cr){var rt=tapeSolveTri(v.sides,T.cr,v.diags);if(!rt.ok)return rt;
+    rt.sig=tapeSigma(v.sides,v.diags,function(a,b){return tapeSolveTri(a,T.cr,b)});rt.P=tapeOrient(rt.P);rt.sidesM=v.sides;rt.diagsM=v.diags;return rt}
   var sr=tapeRot(v.sides,h),r=tapeSolve(sr,v.diags,h);if(!r.ok)return r;
   r.sig=tapeSigma(sr,v.diags);var P=new Array(n);r.P.forEach(function(p,k){P[(h+k)%n]=p});r.P=tapeOrient(P);r.sidesM=v.sides;r.diagsM=v.diags;return r;
 }
@@ -1769,58 +1822,91 @@ function tapeAutoHub(){
   TP.hint='Corner '+(b.hub+1)+' picked from the shape on the map: '+(b.ok?'every cross stays inside the plot and no triangle is thin.':'the boundary bends inward, so a cross may pass outside the plot. Tape it carefully.');
 }
 function hubOpts(n,h){var o='';for(var x=0;x<n;x++)o+='<option value="'+x+'"'+(x===h?' selected':'')+'>'+(x+1)+'</option>';return o}
-function tapeDiagram(n,hub,ref){
-  var W=300,H=170,pad=24,P=[];
+// numbered picture of the plot. o.plain: just the corners and typed sides; o.crs: crosses to draw (else the fan from the hub); o.sel: corner picked first
+function tapeDiagram(n,hub,ref,o){
+  o=o||{};var W=300,H=o.plain?150:170,pad=24,P=[];
   if(ref&&ref.length===n){var xs=ref.map(function(p){return p.x}),ys=ref.map(function(p){return-p.y}),x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),sc=Math.min((W-2*pad)/((x1-x0)||1),(H-2*pad)/((y1-y0)||1));
     P=ref.map(function(p,i){return{x:pad+(xs[i]-x0)*sc+((W-2*pad)-(x1-x0)*sc)/2,y:pad+(ys[i]-y0)*sc+((H-2*pad)-(y1-y0)*sc)/2}})}
-  else for(var i=0;i<n;i++){var a=-Math.PI/2+2*Math.PI*i/n;P.push({x:W/2+105*Math.cos(a),y:H/2+60*Math.sin(a)})}
-  var g='<svg id="tDia" viewBox="0 0 '+W+' '+H+'" style="width:100%;max-height:190px;margin-top:6px;background:var(--soft);border-radius:12px" role="img" aria-label="Plot with crosses from corner '+(hub+1)+'">';
+  else for(var i=0;i<n;i++){var a=-Math.PI/2+2*Math.PI*i/n;P.push({x:W/2+(W/2-pad-4)*Math.cos(a),y:H/2+(H/2-pad+4)*Math.sin(a)})}
+  var g='<svg id="'+(o.plain?'tDiaS':'tDia')+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;max-height:'+(o.plain?170:190)+'px;margin-top:6px;background:var(--soft);border-radius:12px" role="img" aria-label="'+(o.plain?'Numbered corners of the plot':'Plot with crosses')+'">';
   g+='<polygon points="'+P.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ')+'" fill="none" stroke="var(--mut)" stroke-width="2"/>';
-  tapeCross(n,hub).forEach(function(c){var a=P[c[0]],b=P[c[1]];g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="7 5"/>'});
-  P.forEach(function(p,i){var on=i===hub;g+='<g data-h="'+i+'" style="cursor:pointer"><circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="14" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="var(--acc)" stroke-width="2"/><text x="'+p.x.toFixed(1)+'" y="'+(p.y+4.5).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="700" fill="'+(on?'var(--accInk)':'var(--ink)')+'">'+(i+1)+'</text></g>'});
+  if(!o.plain)(o.crs||tapeCross(n,hub)).forEach(function(c){var a=P[c[0]],b=P[c[1]];g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="7 5"/>'});
+  if(o.plain&&o.sides)for(var k=0;k<n;k++){var v=String(o.sides[k]||'').trim();if(!v)continue;var q=P[k],r=P[(k+1)%n],mx=(q.x+r.x)/2,my=(q.y+r.y)/2;g+='<text x="'+mx.toFixed(1)+'" y="'+(my+3.5).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)" stroke="var(--soft)" stroke-width="4" paint-order="stroke">'+esc(v)+'</text>'}
+  P.forEach(function(p,i){var on=o.crs?i===o.sel:i===hub;g+='<g'+(o.plain?'':' data-h="'+i+'" style="cursor:pointer"')+'><circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(o.plain?12:14)+'" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="var(--acc)" stroke-width="2"/><text x="'+p.x.toFixed(1)+'" y="'+(p.y+4.5).toFixed(1)+'" text-anchor="middle" font-size="'+(o.plain?12:13)+'" font-weight="700" fill="'+(on?'var(--accInk)':'var(--ink)')+'">'+(i+1)+'</text></g>'});
   return g+'</svg>';
 }
+function tapeSortCr(a){a.sort(function(x,y){return x[0]-y[0]||x[1]-y[1]})}
 function tapeSheet(){
   if(!TP.loaded){TP.loaded=true;TP.u=inFt()?'ft':'m';var t=S.draft.tape;
-    if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.brg=t.brg||0;TP.mir=!!t.mir;TP.hub=t.hub||0;TP.dm={};tapeCross(TP.n,TP.hub).forEach(function(p,i){if(t.diags&&t.diags[i]!=null&&String(t.diags[i])!=='')TP.dm[tkey(p)]=String(t.diags[i])})}
+    if(t){TP.n=t.sides.length;TP.u=t.u||'m';TP.sides=t.sides.map(String);TP.brg=t.brg||0;TP.mir=!!t.mir;TP.hub=t.hub||0;TP.dm={};TP.cr=t.cr?t.cr.map(function(c){return[c[0],c[1]]}):null;
+      (TP.cr||tapeCross(TP.n,TP.hub)).forEach(function(p,i){if(t.diags&&t.diags[i]!=null&&String(t.diags[i])!=='')TP.dm[tkey(p)]=String(t.diags[i])})}
     else tapeAutoHub()}
   var u=S.settings.unit,drawIn=function(){
-    var n=TP.n,h=TP.hub%n,cr=tapeCross(n,h),ref=tapeRef(),hh='<h3>Tape lengths</h3><div class="mut small">Measure each side of the plot with a tape, going round in order. A shape with 4 or more corners also needs <b>crosses</b>: tapes pulled straight across the plot from one corner to another, so the shape is fixed.</div>';
-    hh+='<div class="row" style="align-items:center"><div style="flex:1.2">Corners</div><select id="tN">'+[3,4,5,6,7,8].map(function(x){return'<option'+(x===n?' selected':'')+'>'+x+'</option>'}).join('')+'</select><select id="tU"><option value="m"'+(TP.u==='m'?' selected':'')+'>metres</option><option value="ft"'+(TP.u==='ft'?' selected':'')+'>feet</option></select></div>';
+    var sc=$('#sheet').scrollTop,n=TP.n,h=TP.hub%n,own=!!TP.cr&&n>=4,cr=own?TP.cr:tapeCross(n,h),ref=tapeRef(),
+    hh='<h3>Tape / sketch lengths</h3><div class="mut small">Number the corners 1, 2, 3 &hellip; round the plot (like on your sketch). Type each side. A plot with 4 or more corners also needs <b>crosses</b>: tapes pulled straight across, so the plot is cut into triangles.</div>';
+    hh+='<div class="row" style="align-items:center;margin-top:10px"><div style="flex:1.2">Corners</div><select id="tN">'+[3,4,5,6,7,8,9,10,11,12].map(function(x){return'<option'+(x===n?' selected':'')+'>'+x+'</option>'}).join('')+'</select><select id="tU"><option value="m"'+(TP.u==='m'?' selected':'')+'>metres</option><option value="ft"'+(TP.u==='ft'?' selected':'')+'>feet</option></select></div>';
+    hh+=tapeDiagram(n,h,n>=4?ref:null,{plain:true,sides:TP.sides});
     hh+='<div class="mut small" style="margin-top:10px">Sides</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
     for(var i=0;i<n;i++)hh+='<div><label style="margin:0 0 3px">'+(i+1)+' &rarr; '+((i+1)%n+1)+'</label><input data-s="'+i+'" inputmode="decimal" value="'+esc(TP.sides[i]||'')+'" autocomplete="off"></div>';
     hh+='</div>';
     if(n>=4){
-      hh+='<div style="margin-top:12px"><b>Crosses</b> <span class="mut small">only '+cr.length+' needed for '+n+' corners</span></div>'
-        +'<div class="row" style="align-items:center;margin-top:6px"><div style="flex:1.2">Crosses from corner</div><select id="tHub">'+hubOpts(n,h)+'</select></div>'
-        +tapeDiagram(n,h,ref)
-        +'<div class="mut small" style="margin-top:4px">Tap a corner on the picture to take the crosses from that corner. Choose a corner you can see or walk straight from to all the other corners. A cross should not pass through a house or a pond.</div>'
-        +'<div class="row" style="margin-top:6px"><button id="tBest">Suggest the best corner</button></div>'
-        +(TP.hint?'<div class="mut small" id="tHint" style="margin-top:4px">'+esc(TP.hint)+'</div>':'<div class="mut small" id="tHint"></div>')
-        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';
-      cr.forEach(function(c){hh+='<div><label style="margin:0 0 3px">'+(c[0]+1)+' &rarr; '+(c[1]+1)+'</label><input data-d="'+tkey(c)+'" inputmode="decimal" value="'+esc(TP.dm[tkey(c)]||'')+'" autocomplete="off"></div>'});
+      hh+='<div style="margin-top:12px"><b>Crosses</b> <span class="mut small">'+(own?'<span id="tCnt">'+cr.length+' of '+(n-3)+' chosen</span>':'only '+cr.length+' needed for '+n+' corners')+'</span></div>'
+        +'<div class="segc" id="tCm"><button data-cm="fan" class="'+(own?'':'on')+'">All from one corner</button><button data-cm="own" class="'+(own?'on':'')+'">My own sketch</button></div>';
+      if(!own){
+        hh+='<div class="row" style="align-items:center;margin-top:8px"><div style="flex:1.2">Crosses from corner</div><select id="tHub">'+hubOpts(n,h)+'</select></div>'
+          +tapeDiagram(n,h,ref)
+          +'<div class="mut small" style="margin-top:4px">Tap a corner on the picture to take the crosses from that corner. Choose a corner you can see or walk straight from to all the other corners. A cross should not pass through a house or a pond.</div>'
+          +'<div class="row" style="margin-top:6px"><button id="tBest">Suggest the best corner</button></div>'
+          +(TP.hint?'<div class="mut small" id="tHint" style="margin-top:4px">'+esc(TP.hint)+'</div>':'<div class="mut small" id="tHint"></div>');
+      }else{
+        hh+=tapeDiagram(n,h,ref,{crs:cr,sel:TP.sel})
+          +'<div class="mut small" id="tHint" style="margin-top:4px">'+(TP.sel>=0?'Corner '+(TP.sel+1)+' picked. Tap the other end of the cross.':'Tap two corners on the picture to add a cross between them. Tap the same two again to remove it. Use the same triangles as your sketch.')+'</div>'
+          +'<div class="row" style="margin-top:6px"><button id="tFanFill">Start from a fan</button><button id="tClr"'+(cr.length?'':' disabled')+'>Clear crosses</button></div>';
+      }
+      hh+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';
+      cr.forEach(function(c,k){hh+='<div><label style="margin:0 0 3px">'+(c[0]+1)+' &rarr; '+(c[1]+1)+'</label><input data-d="'+tkey(c)+'" inputmode="decimal" value="'+esc(TP.dm[tkey(c)]||'')+'" autocomplete="off">'+(own?'<button class="rm" data-rm="'+k+'">Remove</button>':'')+'</div>'});
       hh+='</div>'}
     hh+='<div id="tRes"></div>';
     hh+='<label>Direction of side 1 (0 = north, 90 = east)</label><input id="tB" inputmode="decimal" value="'+TP.brg+'" autocomplete="off">'
       +'<label class="ck"><input type="checkbox" id="tMir"'+(TP.mir?' checked':'')+'>Corners go round clockwise on the map</label>';
     hh+='<div class="row"><button class="pri" id="tPlace">Put on the map</button><button id="tX">Close</button></div>';
-    sheet(hh);
+    sheet(hh);$('#sheet').scrollTop=sc;
+    var plainSides=function(){var el=$('#tDiaS');if(el){var d=document.createElement('div');d.innerHTML=tapeDiagram(n,h,n>=4?ref:null,{plain:true,sides:TP.sides});el.replaceWith(d.firstChild)}};
     var upd=function(){
       var r=tapeCalc(),el=$('#tRes');
-      if(!r.ok){el.innerHTML='<div class="mut small" style="margin-top:10px">'+esc(r.err||'')+'</div>';$('#tPlace').disabled=true;return}
+      if(!r.ok){el.innerHTML='<div class="'+(own&&/cut through|twice|joined|Too many|Choose|split/.test(r.err||'')?'warnbox':'mut small')+'" style="margin-top:10px">'+esc(r.err||'')+'</div>';$('#tPlace').disabled=true;return}
       el.innerHTML='<div style="margin-top:10px"><div class="big-num" style="font-size:28px">'+fa(r.area,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small">'+fa(r.area,'sqm')+' sq m · perimeter '+fl(r.per,1)+' · typical error ±'+fa(r.sig,u)+' '+UNIT[u].l+'</div>'+(r.warn?'<div class="warnbox">'+esc(r.warn)+'</div>':'')+svgPoly({P:r.P,H:[],sides:r.sidesM})+'</div>';
       $('#tPlace').disabled=!!r.warn&&/cross|wraps/.test(r.warn);
     };
-    $('#sheet').querySelectorAll('input[data-s]').forEach(function(x){x.oninput=function(){TP.sides[+x.dataset.s]=x.value;upd()}});
+    $('#sheet').querySelectorAll('input[data-s]').forEach(function(x){x.oninput=function(){TP.sides[+x.dataset.s]=x.value;plainSides();upd()}});
     $('#sheet').querySelectorAll('input[data-d]').forEach(function(x){x.oninput=function(){TP.dm[x.dataset.d]=x.value;upd()}});
-    $('#tN').onchange=function(){TP.n=+this.value;TP.hub=0;TP.hint='';tapeAutoHub();drawIn()};
+    $('#tN').onchange=function(){TP.n=+this.value;TP.hub=0;TP.hint='';TP.cr=null;TP.sel=-1;tapeAutoHub();drawIn()};
     $('#tU').onchange=function(){TP.u=this.value;upd()};
+    if($('#tCm'))$('#tCm').querySelectorAll('button').forEach(function(b){b.onclick=function(){
+      if(b.dataset.cm==='own'){if(own)return;TP.cr=tapeCross(n,h).map(function(c){return[c[0],c[1]]});tapeSortCr(TP.cr)}else{if(!own)return;TP.cr=null}
+      TP.sel=-1;TP.hint='';drawIn()}});
     if($('#tHub')){
       $('#tHub').onchange=function(){TP.hub=+this.value;TP.hint='';drawIn()};
-      $('#sheet').querySelectorAll('#tDia [data-h]').forEach(function(g){g.onclick=function(){TP.hub=+g.dataset.h;TP.hint='';drawIn()}});
+      $('#sheet').querySelectorAll('#tDia [data-h]').forEach(function(g){g.onclick=function(){
+        if(!own){TP.hub=+g.dataset.h;TP.hint='';drawIn()}}});
       $('#tBest').onclick=function(){
         var rf=tapeRef();if(!rf){TP.hint='Mark a rough shape with '+TP.n+' corners on the map first. Then I can pick the best corner for the crosses.';$('#tHint').textContent=TP.hint;return}
         var b=tapeBestHub(rf);TP.hub=b.hub;TP.hint='Corner '+(b.hub+1)+' is best: '+(b.ok?'every cross stays inside the plot and no triangle is thin.':'the boundary bends inward, so a cross may pass outside the plot. Tape it carefully.');drawIn()};
+    }
+    if(own){
+      $('#sheet').querySelectorAll('#tDia [data-h]').forEach(function(g){g.onclick=function(){
+        var i=+g.dataset.h;
+        if(TP.sel<0){TP.sel=i;drawIn();return}
+        if(TP.sel===i){TP.sel=-1;drawIn();return}
+        var a=TP.sel,b=i,at=-1;TP.sel=-1;
+        TP.cr.forEach(function(c,k){if(tkey(c)===tkey([a,b]))at=k});
+        if(at>=0)TP.cr.splice(at,1);
+        else if(Math.abs(a-b)===1||Math.abs(a-b)===n-1){TP.hint='';toast('Corners '+(Math.min(a,b)+1)+' and '+(Math.max(a,b)+1)+' are joined by a side already')}
+        else{TP.cr.push([Math.min(a,b),Math.max(a,b)]);tapeSortCr(TP.cr)}
+        drawIn()}});
+      $('#sheet').querySelectorAll('button[data-rm]').forEach(function(b){b.onclick=function(){TP.cr.splice(+b.dataset.rm,1);drawIn()}});
+      $('#tFanFill').onclick=function(){TP.cr=tapeCross(n,TP.hub%n).map(function(c){return[c[0],c[1]]});tapeSortCr(TP.cr);TP.sel=-1;drawIn()};
+      $('#tClr').onclick=function(){TP.cr=[];TP.sel=-1;drawIn()};
     }
     $('#tB').oninput=function(){TP.brg=parseFloat(this.value.replace(',','.'))||0};
     $('#tMir').onchange=function(){TP.mir=this.checked};
@@ -1835,7 +1921,9 @@ function tapePlace(){
   var org=(S.tab==='map'||!(S.gps.lat!=null&&Date.now()-S.gps.rx<30000))?{lat:MS.lat,lon:MS.lon}:{lat:S.gps.lat,lon:S.gps.lon};
   var go=function(){
     var d=S.draft;d.corners=tapeCorners(r.P,org.lat,org.lon,TP.brg,TP.mir);d.holes=[];d.mode='corners';d.fp=null;
-    d.tape={sides:TP.sides.slice(0,TP.n),diags:tapeCross(TP.n,TP.hub%TP.n).map(function(c){return TP.dm[tkey(c)]||''}),hub:TP.hub%TP.n,u:TP.u,brg:TP.brg,mir:!!TP.mir};
+    var crl=TP.n>=4&&TP.cr?TP.cr:tapeCross(TP.n,TP.hub%TP.n);
+    d.tape={sides:TP.sides.slice(0,TP.n),diags:crl.map(function(c){return TP.dm[tkey(c)]||''}),hub:TP.hub%TP.n,u:TP.u,brg:TP.brg,mir:!!TP.mir};
+    if(TP.n>=4&&TP.cr)d.tape.cr=TP.cr.map(function(c){return[c[0],c[1]]});
     saveDraft();closeSheet();M.ring=-1;M.split=null;M.view=null;M.refit=true;S.tab='map';render();gcPhotos();
     toast('Plot placed in the middle of the map. Use Tools → Move or turn the plot to put it on the land');
   };
@@ -2298,7 +2386,7 @@ function fileBase(p){return(p.name.replace(/[^\w\-]+/g,'_')||'plot')}
 function renderDetail(p){
   var an=anOf(p,p.mode||'corners'),u=S.settings.unit;
   var h='<button id="bBack" style="margin-bottom:10px">&larr; All plots</button><div class="card"><div style="font-size:20px;font-weight:700">'+esc(p.name)+'</div><div class="mut small">'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</div>'+(p.notes?'<div class="small" style="margin-top:6px">'+esc(p.notes)+'</div>':'')+'<div style="margin-top:10px">'+resultHTML(an,p.mode,false,p)+'</div></div>';
-  if(p.tape&&p.tape.sides)h+='<div class="card"><h2>Tape lengths</h2><div class="small">Sides: '+p.tape.sides.map(function(v,i){return(i+1)+'→'+((i+1)%p.tape.sides.length+1)+' <b>'+esc(v)+'</b>'}).join(' · ')+(p.tape.diags&&p.tape.diags.length?'<br>Crosses: '+tapeCross(p.tape.sides.length,(p.tape.hub||0)%p.tape.sides.length).map(function(c,i){return(c[0]+1)+'→'+(c[1]+1)+' <b>'+esc(p.tape.diags[i])+'</b>'}).join(' · '):'')+' ('+(p.tape.u==='ft'?'feet':'metres')+')</div></div>';
+  if(p.tape&&p.tape.sides)h+='<div class="card"><h2>Tape lengths</h2><div class="small">Sides: '+p.tape.sides.map(function(v,i){return(i+1)+'→'+((i+1)%p.tape.sides.length+1)+' <b>'+esc(v)+'</b>'}).join(' · ')+(p.tape.diags&&p.tape.diags.length?'<br>Crosses: '+(p.tape.cr||tapeCross(p.tape.sides.length,(p.tape.hub||0)%p.tape.sides.length)).map(function(c,i){return(c[0]+1)+'→'+(c[1]+1)+' <b>'+esc(p.tape.diags[i])+'</b>'}).join(' · '):'')+' ('+(p.tape.u==='ft'?'feet':'metres')+')</div></div>';
   h+='<div class="card"><h2>Corners</h2><table>'+p.corners.map(function(c,i){return'<tr><td>'+(i+1)+'</td><td style="font-weight:400;font-size:13px">'+c.lat.toFixed(6)+', '+c.lon.toFixed(6)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+(c.note?'<div style="font-weight:600;margin-top:2px">'+esc(c.note)+'</div>':'')+(c.ph&&c.ph.length?'<div class="thumbs" data-ph="'+i+'"></div>':'')+'</td></tr>'}).join('')+'</table></div>';
   if(an.H.length)h+='<div class="card"><h2>Excluded areas</h2><table>'+an.H.map(function(H,i){return'<tr><td>Area '+(i+1)+'</td><td>'+fa(shoelace(H),u)+' '+UNIT[u].l+'</td></tr>'}).join('')+'</table></div>';
   h+='<button class="pri" id="bMap" style="width:100%;margin-bottom:8px">&#128752;&#65039; View on satellite map</button>';

@@ -120,8 +120,8 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   await page.click('#mSrch'); await page.fill('#mQ', 'Testville'); await page.click('#mGo'); await page.waitForSelector('#mRes button');
   await page.click('#mRes button'); await page.waitForTimeout(450);
   const v2 = await mview(); ok(nomReq === 1 && Math.abs(v2.lat - 11.2) < 0.01 && Math.abs(v2.lon - 76.2) < 0.01, 'search flies to the result (' + v2.lat.toFixed(3) + ', ' + v2.lon.toFixed(3) + ' z' + v2.zoom.toFixed(1) + ')');
-  await page.click('#mSrch'); await page.fill('#mQ', '11.05, 76.07'); await page.click('#mGo'); await page.waitForTimeout(300);
-  const v3 = await mview(); ok(Math.abs(v3.lat - 11.05) < 0.001 && nomReq === 1, 'lat,lon typed directly works without a network search');
+  await page.click('#mSrch'); await page.fill('#mQ', '11.05, 76.07'); await page.click('#mGo'); let v3 = await mview(); for (let k = 0; k < 25 && Math.abs(v3.lat - 11.05) >= 0.001; k++) { await page.waitForTimeout(100); v3 = await mview(); }
+  ok(Math.abs(v3.lat - 11.05) < 0.001 && nomReq === 1, 'lat,lon typed directly works without a network search');
 
   // 9) GPS point on the map tab
   await page.click('#mFit'); await page.click('#mGps'); await page.waitForSelector('#capbar');
