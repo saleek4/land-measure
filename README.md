@@ -1,6 +1,6 @@
-# land-measure
+# Land Alavu (repo: land-measure)
 
-Personal iPhone web app (PWA) to measure land plot areas with the phone only.
+Land Alavu (അളവ് = measurement) is a personal iPhone web app (PWA) to measure land plot areas with the phone only.
 
 - **GPS corners / walk boundary**: averages GPS readings per corner, skips readings while the phone moves, estimates slope from GPS height.
 - **Fit to a wanted area** (Tools): type the area you want (say 94 cent). The app adds a new point on the last, unclosed side (pushed out or in), or moves one corner along a boundary line, so the plot comes to exactly that area. Undo puts it back.

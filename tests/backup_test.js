@@ -29,7 +29,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   await page.screenshot({ path: TH.shot('bk1_ask.png') });
   await page.click('#sheet button.pri'); await page.waitForTimeout(500);
   let sh = await page.evaluate(() => window.__shared);
-  ok(sh.length === 1 && /^land-measure-backup-\d{4}-\d\d-\d\d\.json$/.test(sh[0].name), 'share sheet got a dated backup file: ' + (sh[0] && sh[0].name));
+  ok(sh.length === 1 && /^land-alavu-backup-\d{4}-\d\d-\d\d\.json$/.test(sh[0].name), 'share sheet got a dated backup file: ' + (sh[0] && sh[0].name));
   let j = JSON.parse(sh[0].text); ok(j.app === 'land-measure' && j.plots.length === 1 && j.plots[0].name === 'Plot A', 'file holds the saved plot');
   const lb = await page.evaluate(() => JSON.parse(localStorage.getItem('lm.backup.v1'))); ok(lb && lb.n === 1, 'last backup remembered (1 plot)');
   // second plot right away: not asked again (backed up today), but the Plots tab shows the warning card

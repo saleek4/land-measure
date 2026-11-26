@@ -6,10 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Land Measure">
+<meta name="apple-mobile-web-app-title" content="Land Alavu">
 <meta name="theme-color" content="#1f7a4d">
 <link rel="apple-touch-icon" href="data:image/png;base64,__ICON__">
-<title>Land Measure</title>
+<title>Land Alavu</title>
 <style>
 :root{--bg:#f4f6f3;--card:#fff;--ink:#16211a;--mut:#5d6b61;--line:#dfe5df;--acc:#1f7a4d;--accInk:#fff;--warn:#b7791f;--bad:#c0392b;--good:#1f7a4d;--soft:#e8f2ec;--fill:rgba(31,122,77,.16)}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1511;--card:#18211b;--ink:#e8efe9;--mut:#9fb0a4;--line:#2a372e;--acc:#3fb37a;--accInk:#06150d;--warn:#e0a84a;--bad:#ef6b5b;--good:#3fb37a;--soft:#1e2c23;--fill:rgba(63,179,122,.2)}}
@@ -132,7 +132,7 @@ body.maptab #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 </style>
 </head>
 <body>
-<header><div class="ttl">Land Measure</div><button id="gpsChip" class="chip off">GPS off</button></header>
+<header><div class="ttl">Land Alavu</div><button id="gpsChip" class="chip off">GPS off</button></header>
 <main id="app"></main>
 <nav>
   <button data-tab="measure"><b>&#128205;</b>Measure</button>
@@ -637,7 +637,7 @@ function backupJSON(){var pl=clone(S.plots);pl.forEach(function(p){allRings(p).f
 function backupNow(after){
   if(!S.plots.length){toast('No saved plots to back up yet');return}
   var d=new Date(),ymd=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2),n=S.plots.length;
-  share('Land Measure backup',backupJSON(),'land-measure-backup-'+ymd+'.json','application/json',function(){store(LBK,{t:Date.now(),n:n});if(after)after();else toast('Backup saved. Keep that file safe')});
+  share('Land Alavu backup',backupJSON(),'land-alavu-backup-'+ymd+'.json','application/json',function(){store(LBK,{t:Date.now(),n:n});if(after)after();else toast('Backup saved. Keep that file safe')});
 }
 function isStandalone(){return window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)}
 function isIOS(){return/iPhone|iPad|iPod/.test(navigator.userAgent||'')}
@@ -2263,7 +2263,7 @@ function planCanvas(p,an,pw,ph){
   var rc=p.rec&&recCmp(an.net,an.sig,p.rec);
   if(rc){y+=56;x.font='700 32px '+F;x.fillStyle=rc.within?'#1f7a4d':'#b7791f';x.fillText('Record '+fa(p.rec.a,p.rec.u)+' '+UNIT[p.rec.u].l+'  →  measured '+(rc.pct>0?'+':'−')+Math.abs(rc.pct).toFixed(1)+'%'+(rc.within?' (within error)':''),m,y)}
   if(p.notes){y+=60;x.font='28px '+F;x.fillStyle='#16211a';wrapText(x,'Notes: '+p.notes,pw-2*m).slice(0,4).forEach(function(l){x.fillText(l,m,y);y+=38})}
-  x.font='24px '+F;x.fillStyle='#8a968d';x.fillText('Made with Land Measure on a phone. An estimate, not a legal survey.',m,ph-50);
+  x.font='24px '+F;x.fillStyle='#8a968d';x.fillText('Made with Land Alavu on a phone. An estimate, not a legal survey.',m,ph-50);
   return cv;
 }
 function planBlob(p,an,kind){
