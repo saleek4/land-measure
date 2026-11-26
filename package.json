@@ -1,0 +1,14 @@
+{
+  "name": "land-measure",
+  "version": "0.13.0",
+  "private": true,
+  "description": "Personal PWA that measures land plots with a phone (GPS, satellite map, tape lengths).",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node tests/run_all.js",
+    "serve": "node -e \"require('http').createServer((q,r)=>{const f=q.url.split('?')[0]==='/sw.js'?'sw.js':'index.html';r.writeHead(200,{'content-type':f==='sw.js'?'text/javascript':'text/html'});r.end(require('fs').readFileSync(f))}).listen(8080,()=>console.log('http://localhost:8080'))\""
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

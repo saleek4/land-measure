@@ -31,3 +31,6 @@ Personal iPhone web app (PWA) to measure land plot areas with the phone only.
 - Units: cent, acre, sq m, sq ft, Ha-Ar-m2. Saved plots, backup.
 
 Map pictures: Tiles (c) Esri, Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community. Place search: OpenStreetMap Nominatim.
+
+## Development
+Edit `src/index.src.html` (never `index.html`), then `node build.js`, then `node tests/run_all.js`. Details, code map, release routine and the Android / Play Store roadmap are in [CLAUDE.md](CLAUDE.md).
