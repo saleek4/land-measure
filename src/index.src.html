@@ -264,9 +264,14 @@ function processWalk(pts){
   if(out.length<3)return null;
   return out.map(function(p){var g=fromXY(p.x,p.y,lat0,lon0),hz=isFinite(p.z);return{lat:g.lat,lon:g.lon,acc:med,n:1,alt:hz?p.z:null,altAcc:hz?medZ:null}});
 }
-var UNIT={cent:{l:'cent',f:function(a){return a/40.468564224}},acre:{l:'acre',f:function(a){return a/4046.8564224}},sqm:{l:'sq m',f:function(a){return a}},sqft:{l:'sq ft',f:function(a){return a*10.7639104167}}};
+var UNIT={};
+[['cent','cent',40.468564224,2,'cent (dismil)'],['acre','acre',4046.8564224,4,'acre'],['sqm','sq m',1,1,'sq m'],['sqft','sq ft',1/10.7639104167,0,'sq ft'],
+ ['guntha','guntha',1089*0.09290304,2,'guntha (1089 sq ft)'],['ground','ground',2400*0.09290304,3,'ground (2400 sq ft)'],['hectare','hectare',10000,4,'hectare'],
+ ['sqyd','sq yd',0.83612736,1,'sq yard (gaj)'],['kanal','kanal',5445*0.09290304,3,'kanal (Punjab)'],['marla','marla',272.25*0.09290304,2,'marla (Punjab)']
+].forEach(function(r){var m=r[2];UNIT[r[0]]={l:r[1],m:m,d:r[3],n:r[4],f:function(a){return a/m}}});
+var UNIT_CORE=['cent','acre','sqm','sqft'];
 function haAre(a){var ha=Math.floor(a/10000),are=Math.floor((a-ha*10000)/100),m2=a-ha*10000-are*100;return{ha:ha,are:are,m2:m2}}
-function toSqm(v,u){return u==='cent'?v*40.468564224:u==='acre'?v*4046.8564224:u==='sqft'?v/10.7639104167:v}
+function toSqm(v,u){return UNIT[u]?v*UNIT[u].m:v}
 // measured (net) area against the area written in the record; rec={a:sq m,u:unit}
 function recCmp(net,sig,rec){if(!rec||!(rec.a>0)||!(net>0))return null;var d=net-rec.a;return{d:d,pct:d/rec.a*100,within:Math.abs(d)<=2*sig}}
 function parseNums(s){return String(s||'').split(/[\s,:;]+/).filter(function(t){return t!==''}).map(Number)}
@@ -635,6 +640,7 @@ var S={
   motion:{on:false,asked:false,big:0},
   cap:null,walk:null,wake:null
 };
+if(!UNIT[S.settings.unit])S.settings.unit='cent';
 function saveDraft(){store(K.draft,S.draft)}
 function savePlots(){touchPlots();if(!store(K.plots,S.plots))toast('Could not save (storage full or blocked)');syncSoon()}
 function saveSettings(){store(K.settings,S.settings)}
@@ -800,7 +806,7 @@ var FT=3.280839895;
 function inFt(){return !!(S&&S.settings&&S.settings.lunit==='ft')}
 function fl(m,d){d=(d==null?1:d);return inFt()?num(m*FT,d)+' ft':num(m,d)+' m'}
 function lu(){return inFt()?'ft':'m'}
-function fa(a,u){var v=UNIT[u].f(a);return u==='cent'?num(v,2):u==='acre'?num(v,4):u==='sqm'?num(v,1):num(v,0)}
+function fa(a,u){return num(UNIT[u].f(a),UNIT[u].d)}
 function fdate(ts){var d=new Date(ts);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
 function quality(rel){return rel<=0.01?{t:'Good',c:'good',d:'about ±1% or better'}:rel<=0.03?{t:'Fair',c:'warn',d:'about ±3%'}:rel<=0.08?{t:'Rough',c:'warn',d:'about ±5–8%'}:{t:'Too rough',c:'bad',d:'error is large for this plot size. Use tape or laser for small plots'}}
 
@@ -997,7 +1003,7 @@ function recHTML(an,rec){
 }
 
 function resultHTML(an,mode,withSave,o){
-  var q=quality(an.rel),u=S.settings.unit,oth=['cent','acre','sqm','sqft'].filter(function(x){return x!==u}),k=haAre(an.net),d2=u==='cent'?2:u==='acre'?4:u==='sqm'?1:0;
+  var q=quality(an.rel),u=S.settings.unit,oth=UNIT_CORE.filter(function(x){return x!==u}),k=haAre(an.net),d2=UNIT[u].d;
   var h='<div class="mut small">'+(an.holeArea>0?'Net area (horizontal)':'Map area (horizontal)')+'</div><div class="big-num" data-cyc="1" style="cursor:pointer">'+fa(an.net,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small" style="margin-top:-2px">Tap the number to change the unit</div>';
   if(an.holeArea>0)h+='<div class="mut small">Plot '+fa(an.area,u)+' &minus; excluded '+fa(an.holeArea,u)+' '+UNIT[u].l+' ('+an.H.length+' area'+(an.H.length===1?'':'s')+')</div>';
   h+='<div style="margin:6px 0"><span class="tag '+q.c+'">'+q.t+'</span> <span class="mut small">typical error ±'+num(UNIT[u].f(an.sig),d2)+' '+UNIT[u].l+' ('+(an.rel*100).toFixed(1)+'%)</span></div>';
@@ -1008,6 +1014,7 @@ function resultHTML(an,mode,withSave,o){
   h+='<table>'+oth.map(function(x){return'<tr><td>'+UNIT[x].l+'</td><td>'+fa(an.net,x)+'</td></tr>'}).join('');
   h+='<tr><td>Hectare · Are · sq m</td><td>'+k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m²</td></tr>';
   h+='<tr><td>Perimeter</td><td>'+fl(an.per,1)+'</td></tr>'+slopeRows(an,u)+'</table>';
+  h+='<details class="tip"><summary>More units (guntha, ground, hectare &hellip;)</summary><table>'+Object.keys(UNIT).filter(function(x){return UNIT_CORE.indexOf(x)<0&&x!==u}).map(function(x){return'<tr><td>'+UNIT[x].l+'</td><td>'+fa(an.net,x)+'</td></tr>'}).join('')+'</table></details>';
   if(an.ngps>0)h+='<div class="mut small" style="margin-top:8px">The slope is worked out from the phone’s GPS height at your corners. It is rough, and only slopes steeper than a few degrees show up.</div>';
   h+=svgPoly(an);
   return h;
@@ -1695,7 +1702,7 @@ function openPop(kind){
       +'<label class="ck"><input type="checkbox" id="mAng"'+(MS.ang?' checked':'')+'>Corner angles</label>'
       +'<label class="ck"><input type="checkbox" id="mSaved"'+(MS.saved?' checked':'')+'>Show saved plots</label>'
       +'<label class="ck"><input type="checkbox" id="mLab"'+(MS.labels?' checked':'')+'>Place names (zoomed out)</label>'
-      +'<div class="pt"><span>Units</span></div><div class="row"><select id="mAU">'+[['cent','cent'],['acre','acre'],['sqm','sq m'],['sqft','sq ft']].map(function(a){return'<option value="'+a[0]+'"'+(S.settings.unit===a[0]?' selected':'')+'>'+a[1]+'</option>'}).join('')+'</select><select id="mLU"><option value="m"'+(S.settings.lunit!=='ft'?' selected':'')+'>metres</option><option value="ft"'+(S.settings.lunit==='ft'?' selected':'')+'>feet</option></select></div>'
+      +'<div class="pt"><span>Units</span></div><div class="row"><select id="mAU">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(S.settings.unit===k?' selected':'')+'>'+UNIT[k].l+'</option>'}).join('')+'</select><select id="mLU"><option value="m"'+(S.settings.lunit!=='ft'?' selected':'')+'>metres</option><option value="ft"'+(S.settings.lunit==='ft'?' selected':'')+'>feet</option></select></div>'
       +'<div class="pt"><span>Sharpest picture level</span></div><select id="mNat"><option value="0"'+(!MS.nat?' selected':'')+'>Auto (best available)</option>'+[19,18,17,16].map(function(v){return'<option value="'+v+'"'+(MS.nat===v?' selected':'')+'>Up to level '+v+'</option>'}).join('')+'</select>'
       +'<label class="ck"><input type="checkbox" id="mClr"'+(MS.clear?' checked':'')+'>Clearer picture (more contrast)</label>'
       +'<label class="ck"><input type="checkbox" id="mLoupe"'+(MS.loupe!==false?' checked':'')+'>Magnifier when dragging a point</label>'
@@ -1711,7 +1718,7 @@ function openPop(kind){
     $('#mLoupe').onchange=function(){MS.loupe=this.checked;saveView()};
     $('#mClr').onchange=function(){MS.clear=this.checked;saveView();scheduleDraw();mmSched()};
     $('#mNat').onchange=function(){MS.nat=+this.value||0;saveView();scheduleDraw()};
-    $('#mAU').onchange=function(){S.settings.unit=this.value;saveSettings();M.lastPanel='';mapBottom();scheduleDraw()};
+    $('#mAU').onchange=function(){S.settings.unit=S.settings.pref=this.value;saveSettings();M.lastPanel='';mapBottom();scheduleDraw()};
     $('#mLU').onchange=function(){S.settings.lunit=this.value;saveSettings();M.lastPanel='';M.lastScale='';mapBottom();scheduleDraw()};
     el.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){MS.add=b.dataset.add;M.edit=null;if(MS.add!=='edit')M.sel=-1;M.lastPanel='';saveView();if(MS.add==='edit')toast('Tap a side or a point to edit it');if(MS.add==='draw')toast('Draw the outline with one finger. Two fingers move or zoom the map.');el.querySelectorAll('[data-add]').forEach(function(x){x.classList.toggle('on',x===b)});mapBottom();scheduleDraw()}});
     if($('#mClear'))$('#mClear').onclick=function(){closePop();if(!S.draft.corners.length){toast('No points yet');return}choose('Remove all points?','All points of this plot will be removed.',[{label:'Remove all',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(ok){S.draft.corners=[];S.draft.holes=[];S.draft.tape=null;S.draft.fp=null;S.draft.sk=null;M.sel=-1;M.ring=-1;saveDraft();mapBottom();scheduleDraw();gcPhotos()}})};
@@ -1928,7 +1935,7 @@ function rotateAll(deg){
 // ---------- record area ----------
 function recSheet(target,after){
   var r=target.rec,u=(r&&r.u)||S.settings.unit,v=r?UNIT[u].f(r.a):'';
-  sheet('<h3>Record area</h3><div class="mut small">The area written in the deed, Ente Bhoomi or the sale papers. The app shows how far your measurement is from it.</div><div class="row"><input id="rcV" inputmode="decimal" placeholder="e.g. 25.5" value="'+(v===''?'':(+v).toFixed(4).replace(/\.?0+$/,''))+'" autocomplete="off"><select id="rcU" style="flex:0 0 110px">'+['cent','acre','sqm','sqft'].map(function(x){return'<option value="'+x+'"'+(x===u?' selected':'')+'>'+UNIT[x].l+'</option>'}).join('')+'</select></div><div class="row"><button class="pri" id="rcOk">Save</button>'+(r?'<button class="danger" id="rcDel">Remove</button>':'')+'<button id="rcNo">Cancel</button></div>');
+  sheet('<h3>Record area</h3><div class="mut small">The area written in the deed, Ente Bhoomi or the sale papers. The app shows how far your measurement is from it.</div><div class="row"><input id="rcV" inputmode="decimal" placeholder="e.g. 25.5" value="'+(v===''?'':(+v).toFixed(4).replace(/\.?0+$/,''))+'" autocomplete="off"><select id="rcU" style="flex:0 0 110px">'+Object.keys(UNIT).map(function(x){return'<option value="'+x+'"'+(x===u?' selected':'')+'>'+UNIT[x].l+'</option>'}).join('')+'</select></div><div class="row"><button class="pri" id="rcOk">Save</button>'+(r?'<button class="danger" id="rcDel">Remove</button>':'')+'<button id="rcNo">Cancel</button></div>');
   $('#rcNo').onclick=closeSheet;
   $('#rcOk').onclick=function(){var x=parseFloat($('#rcV').value.replace(',','.')),un=$('#rcU').value;if(!(x>0)){toast('Type the area, for example 25.5');return}target.rec={a:toSqm(x,un),u:un};closeSheet();if(target===S.draft)saveDraft();else savePlots();if(after)after()};
   if($('#rcDel'))$('#rcDel').onclick=function(){target.rec=null;closeSheet();if(target===S.draft)saveDraft();else savePlots();if(after)after()};
@@ -2793,7 +2800,7 @@ function render(){
 }
 document.addEventListener('click',function(e){
   var b=e.target.closest&&e.target.closest('#app .big-num[data-cyc]');if(!b)return;
-  var order=['cent','acre','sqm','sqft'],i=order.indexOf(S.settings.unit);S.settings.unit=order[(i+1)%order.length];saveSettings();
+  var pf=UNIT[S.settings.pref]?S.settings.pref:S.settings.unit,order=UNIT_CORE.indexOf(pf)<0?UNIT_CORE.concat([pf]):UNIT_CORE,i=order.indexOf(S.settings.unit);S.settings.unit=order[(i+1)%order.length];saveSettings();
   var y=window.scrollY;render();window.scrollTo(0,y);
 });
 document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){leaveModes();S.tab=b.dataset.tab;S.viewId=null;M.view=null;render()}});
@@ -2870,7 +2877,7 @@ function renderMeasure(){
   var hplRow=function(p){return'<button class="hpl" data-id="'+p.id+'"><span><b>'+esc(p.name)+'</b><small>'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</small></span><span class="hpa">'+fa(p.area,u0)+' <small>'+UNIT[u0].l+'</small></span></button>'};
   var secPlots='<div class="card hs"><div class="hsh">&#128193; <b>Plots</b> <span class="mut small">('+S.plots.length+' saved)</span><button class="pri sm" id="bNewPlot">+ New plot</button></div>'+(S.plots.length?S.plots.slice(0,2).map(hplRow).join('')+(S.plots.length>2?'<button id="hplAll" class="lnk">See all '+S.plots.length+' plots</button>':''):'<div class="mut small">No saved plots yet. Press + New plot, or pick a way below.</div>')+'</div>';
   var secPlan=secCard('&#129517;','Plan','plan','<button id="bPlanPhoto" class="opt"><span class="ic">&#128247;</span><span><b>New plan from a photo</b><small>Photo of your paper plan. The sketch is made for you.</small></span></button>'+tTapeNew);
-  var secMeasure=secCard('&#128207;','Measure','map',tMap);
+  var secMeasure=secCard('&#128207;','Measure','map',tMap+'<button id="bConv" class="lnk">&#128260; Unit converter (cent, sq ft, guntha &hellip;)</button>');
   var secSketch=secCard('&#9999;&#65039;','Sketch','sketch',tSk+(sk0?'<button id="bSketchNew" class="lnk">Start a new sketch instead</button>':''));
   var newBtn=busy?'':'<button id="bNewPlot" class="lnk" style="margin:0 0 8px">+ New plot (start again)</button>';
   var res='';
@@ -2915,6 +2922,7 @@ function renderMeasure(){
   if(q('#bWalkCancel'))q('#bWalkCancel').onclick=cancelWalk;
   if(q('#bSave'))q('#bSave').onclick=savePlot;
   if(q('#bToMap'))q('#bToMap').onclick=function(){M.refit=true;S.tab='map';render()};
+  if(q('#bConv'))q('#bConv').onclick=convSheet;
   if(q('#bTape'))q('#bTape').onclick=function(){tapeSheet()};
   if(q('#bField'))q('#bField').onclick=fpSheet;
   if(q('#bPlace'))q('#bPlace').onclick=placeOnMap;
@@ -3043,13 +3051,30 @@ function renderDetail(p){
   };
 }
 
+var CONV={v:'1',u:'cent'};
+function convSheet(){
+  var keys=Object.keys(UNIT);
+  sheet('<h3>Unit converter</h3><div class="mut small">Type an area, pick its unit. Tap any row to start from that unit.</div>'
+    +'<div class="row"><input id="cvV" inputmode="decimal" value="'+esc(CONV.v)+'" autocomplete="off"><select id="cvU" style="flex:0 0 160px">'+keys.map(function(k){return'<option value="'+k+'"'+(k===CONV.u?' selected':'')+'>'+UNIT[k].n+'</option>'}).join('')+'</select></div>'
+    +'<div id="cvOut"></div>'
+    +'<div class="mut small" style="margin-top:8px">Cent and dismil are the same. Ground is the Chennai one (2400 sq ft). Kanal and marla are the Punjab ones (1 kanal = 20 marla). Bigha, biswa and others change from state to state, so they are not here.</div>'
+    +'<div class="row" style="margin-top:8px"><button id="cvOk" class="pri">Close</button></div>');
+  var draw=function(){
+    var raw=$('#cvV').value,x=parseFloat(raw.replace(',','.')),u=$('#cvU').value;CONV.v=raw;CONV.u=u;
+    if(!(x>=0)||!isFinite(x)){$('#cvOut').innerHTML='<div class="mut small" style="margin:10px 0">Type a number.</div>';return}
+    var a=toSqm(x,u),k=haAre(a);
+    $('#cvOut').innerHTML='<table>'+keys.map(function(c){return'<tr data-u="'+c+'" style="cursor:pointer'+(c===u?';font-weight:700':'')+'"><td>'+UNIT[c].n+'</td><td>'+fa(a,c)+'</td></tr>'}).join('')+'<tr><td>Hectare · Are · sq m</td><td>'+k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m²</td></tr></table>';
+    $('#cvOut').querySelectorAll('tr[data-u]').forEach(function(tr){tr.onclick=function(){var c=tr.dataset.u;$('#cvV').value=String(+UNIT[c].f(a).toFixed(6));$('#cvU').value=c;draw()}});
+  };
+  $('#cvV').oninput=draw;$('#cvU').onchange=draw;$('#cvOk').onclick=closeSheet;draw();
+}
 function renderMore(){
   var st=S.settings;
   var opt=function(vals,cur,lab){return vals.map(function(v){return'<option value="'+v+'"'+(String(cur)===String(v)?' selected':'')+'>'+(lab?lab(v):v)+'</option>'}).join('')};
   var h=acctCardHTML()+'<div class="card"><h2>Settings</h2><label>Averaging time per corner</label><select id="sDur">'+opt([15,30,45,60,90],st.dur,function(v){return v+' seconds'})+'</select>';
   h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+fl(v,0)})+'</select>';
-  h+='<label>Main area unit</label><select id="sUnit"><option value="cent"'+(st.unit==='cent'?' selected':'')+'>cent</option><option value="acre"'+(st.unit==='acre'?' selected':'')+'>acre</option><option value="sqm"'+(st.unit==='sqm'?' selected':'')+'>sq m</option><option value="sqft"'+(st.unit==='sqft'?' selected':'')+'>sq ft</option></select>';
-  h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select></div>';
+  h+='<label>Main area unit</label><select id="sUnit">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(st.unit===k?' selected':'')+'>'+UNIT[k].n+'</option>'}).join('')+'</select>';
+  h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select><button id="mConv" style="margin-top:10px">&#128260; Unit converter (cent, sq ft, guntha &hellip;)</button></div>';
   h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. <b>If you delete the Home Screen icon, or clear Safari website data, every saved plot is erased.</b> Photos are not in the backup file. Last backup: '+backupAgo()+'.</div>'+(isIOS()&&!isStandalone()?'<div class="small" style="margin-top:6px">You are in a Safari tab now. It keeps its own plots, separate from the Home Screen icon.</div>':'')+'<div class="row" style="margin-top:10px"><button id="bExp" class="pri">Back up all plots</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
   h+='<div class="card"><h2>How accurate is this?</h2><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></div>';
   h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></div>';
@@ -3060,7 +3085,8 @@ function renderMore(){
   acctBind();
   $('#sDur').onchange=function(){st.dur=+this.value;saveSettings()};
   $('#sAcc').onchange=function(){st.maxAcc=+this.value;saveSettings()};
-  $('#sUnit').onchange=function(){st.unit=this.value;saveSettings()};
+  $('#sUnit').onchange=function(){st.unit=st.pref=this.value;saveSettings()};
+  $('#mConv').onclick=convSheet;
   $('#sLU').onchange=function(){st.lunit=this.value;saveSettings();renderMore()};
   $('#bExp').onclick=function(){backupNow(function(){toast('Backup saved. Keep that file safe');renderMore()})};
   $('#bGeoAll').onclick=function(){if(!S.plots.length){toast('No plots yet');return}share('Land plots GeoJSON',geojson(S.plots),'land-plots.geojson','application/geo+json')};

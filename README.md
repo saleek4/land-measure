@@ -26,7 +26,7 @@ Land Alavu (അളവ് = measurement) is a personal iPhone web app (PWA) to me
   ```
 - **Backup reminder**: saved plots live only inside the app (deleting the Home Screen icon or clearing Safari data erases them). After a save, and on the Plots tab, the app asks for a backup when there is none from the last day / week or when plots were added since. "Back up now" opens the share sheet with a dated .json file (Files, iCloud Drive, WhatsApp). More tab > Import restores it. A Safari tab and the Home Screen icon keep separate plots, and the app says so.
 - **Freehand draw**: on the Map tab tap Draw and sketch the outline of the plot with one finger. It becomes a rough polygon with its area straight away (two fingers move or zoom the map; Undo removes the whole drawing).
-- **Units**: area in cent, acre, sq m or sq ft; lengths in metres or feet (More tab, or Map options). Tap the big area number on a result to cycle the area unit.
+- **Units**: area in cent (dismil), acre, sq m, sq ft, guntha, ground, hectare, sq yard (gaj), kanal or marla; lengths in metres or feet (More tab, or Map options). Tap the big area number on a result to cycle cent / acre / sq m / sq ft (and your chosen main unit); the Result lists the other units under "More units". **Unit converter** (Home > Measure, and More tab): type an area in any unit and see it in all of them. Bigha and biswa are not included because they differ from state to state.
 - **Live map on the Home tab**: a small satellite map shows where you stand (blue dot), the corners you have marked with GPS (green) and tells you whether you are inside the marked plot. The Map tab also opens on your own location.
 - **Satellite map tab**: tap or drag points on Esri World Imagery to estimate an area without GPS. Distances, perimeter and area show at the top, and the area fill is transparent (adjustable) so the imagery stays visible. Where Esri has no sharp picture (grey "Map data not yet available" tiles), the app shows the best lower-zoom imagery instead; the sharpest level can also be set by hand in the map options.
 - **Split a plot** (Map tab > Tools, or Split on a saved plot): ready-made ideas shown as pictures (2 equal parts, 3 strips, from a corner, keep a quarter, 3 m road). Live controls for side/corner, equal parts, ratio, cents, road strip. Parts are drawn in colour on the map and can be saved as separate plots.
@@ -35,7 +35,7 @@ Land Alavu (അളവ് = measurement) is a personal iPhone web app (PWA) to me
 - **Tape lengths**: type sides and crosses (tapes straight across the plot) in metres or feet; the plot is drawn, area and error are worked out, then placed on the map (move / turn it onto the land). The sheet says how many crosses are needed (corners − 3) and shows them on a picture. Tap a corner (or use the list) to take the crosses from that corner; "Suggest the best corner" picks, from the rough shape already on the map, the corner whose crosses stay inside the plot and avoid thin triangles.
 - **Magnifier** while dragging a point, per-point **notes and photos** (photos stay in the phone's IndexedDB, not in the backup).
 - Exports: plan PDF, plan picture, KML (with excluded areas and point notes), GeoJSON, summary text.
-- Units: cent, acre, sq m, sq ft, Ha-Ar-m2. Saved plots, backup.
+- Units: cent, acre, sq m, sq ft, guntha, ground, hectare, sq yd, kanal, marla, Ha-Ar-m2. Saved plots, backup.
 
 Map pictures: Tiles (c) Esri, Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community. Place search: OpenStreetMap Nominatim.
 
