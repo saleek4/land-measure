@@ -3,7 +3,7 @@ const TH=require('./helpers');
 const fs=require('fs');
 const html=fs.readFileSync(TH.root + '/index.html','utf8');
 const m=html.match(/\/\/ <MATH>([\s\S]*?)\/\/ <\/MATH>/)[1];
-const f=new Function(m+';return{tapeSolve,tapeSolveTri,tapeTriCheck,tapeCross,tapeRot,tapeOrient,polyArea,tapeKey}')();
+const f=new Function(m+';return{tapeSolve,tapeSolveTri,tapeTriCheck,tapeCross,tapeRot,tapeOrient,polyArea,tapeKey,skShape,fpAlign}')();
 let fail=0;const ok=(c,msg)=>{console.log((c?'PASS ':'FAIL ')+msg);if(!c)fail++};
 const near=(a,b,t)=>Math.abs(a-b)<=t, D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 // ---- checks ----
@@ -45,4 +45,17 @@ const lr=f.tapeSolveTri(Ls,Lc,Ll);ok(lr.ok&&near(lr.area,Math.abs(f.polyArea(L))
 let r=f.tapeSolveTri([10,10,10,10],[[0,2]],[]);ok(!r.ok&&/cross from corner 1 to corner 3/.test(r.err),'missing length is asked for with real numbers: '+r.err);
 r=f.tapeSolveTri([10,10,10,10],[[0,2]],[40]);ok(!r.ok&&/do not close up/.test(r.err),'impossible length refused: '+r.err);
 r=f.tapeSolveTri([10,0,10,10],[[0,2]],[12]);ok(!r.ok,'zero side refused');
+// ---- sketch: the true shape is turned like the drawing ----
+{ // a drawing of the L shape, drawn counter-clockwise, turned 30 degrees and 5 times too small
+  const th=0.52,rot=(p)=>({x:(p.x*Math.cos(th)-p.y*Math.sin(th))/5,y:(p.x*Math.sin(th)+p.y*Math.cos(th))/5});
+  const Sd=L.map(rot);
+  const solved=f.tapeOrient(f.tapeSolveTri(Ls,Lc,Ll).P);   // side 1 along +x, like the tape sheet gives it
+  const a=f.skShape(solved,Sd);
+  let w=0;for(let i=0;i<6;i++){w=Math.max(w,Math.hypot(a.P[i].x*0.2-(Sd[i].x-Sd.reduce((s,p)=>s+p.x,0)/6),a.P[i].y*0.2-(Sd[i].y-Sd.reduce((s,p)=>s+p.y,0)/6)))}
+  ok(!a.flip&&w<1e-6,'sketch drawn counter-clockwise: true shape lands on the drawing, turned the same way (worst '+w.toExponential(1)+')');
+  const Sm=Sd.map(p=>({x:p.x,y:-p.y}));   // the same drawing seen clockwise
+  const b=f.skShape(solved,Sm);
+  ok(b.flip&&Math.abs(f.polyArea(b.P))>0&&f.polyArea(b.P)*f.polyArea(Sm)>0,'sketch drawn clockwise: the true shape is mirrored to go round the same way');
+  const same=b.P.every((p,i)=>Math.abs(Math.hypot(p.x-b.P[(i+1)%6].x,p.y-b.P[(i+1)%6].y)-Ls[i])<1e-6);ok(same,'mirroring keeps every side length');
+}
 console.log(fail?fail+' FAILED':'all passed');process.exit(fail?1:0);
