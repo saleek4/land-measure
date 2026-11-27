@@ -78,7 +78,10 @@ const plots = [mk('a1', 'Sketch plot', 'tape', true), mk('b22', 'Road side', 'gp
   ok((await Promise.all(ids.map(s => page.$(s)))).every(Boolean), 'What next? has Edit, Fit, Move, Split, Exclude, Compare with record, Check with a tape');
   const grp = await page.$$eval('#app .tgrp', a => a.map(e => e.textContent.trim()));
   ok(JSON.stringify(grp) === JSON.stringify(['Fix the shape', 'Divide the land', 'Check and compare']), 'the buttons are in 3 groups: ' + grp.join(' / '));
-  ok(/Capture corner 4/.test(await page.innerText('#bCap')) && /Add or retake corners/.test(await page.innerText('#app')), 'the GPS card is still there to add a corner');
+  ok(/Capture corner 4/.test(await page.innerText('#bCap')) && /Measure with GPS/.test(await page.innerText('#app')), 'the GPS card is still there to add a corner');
+  ok(/3 corners taken/.test(await page.innerText('.next')) && /Capture corner 4/.test(await page.innerText('.next')), 'the hint says to capture the next corner, not that the area is final');
+  const yCap = await page.$eval('#bCap', e => e.getBoundingClientRect().top + window.scrollY), yEdit = await page.$eval('#aEdit', e => e.getBoundingClientRect().top + window.scrollY);
+  ok(yCap < 700 && yCap < yEdit, 'with 3 GPS corners the Capture button is on the first screen, above What next? (y=' + Math.round(yCap) + ')');
   await page.fill('#fPlace', 'Near the well'); await page.waitForTimeout(100);
   ok((await lsDraft()).place === 'Near the well', 'the place typed on Home is kept in the draft');
 

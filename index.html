@@ -2882,14 +2882,15 @@ function renderMeasure(){
     // ---- a plot in progress: how it is going, then the result and what to do next
     var wayName={gps:'GPS on the land',map:'Satellite map',plan:'Plan or tape lengths'}[way];
     var top='<div class="ph"><div><b>Plot in progress</b><div class="mut small">'+wayName+(n?' &middot; '+n+' point'+(n===1?'':'s'):'')+'</div></div>'+(busy?'':(n||sk0?'<button id="bNewPlot">New plot</button>':'<button id="bWayX">Cancel</button>'))+'</div>';
-    var nxt=busy?'':an?'<div class="next">&#9989; <b>Area is ready.</b> Save the plot, or fix it with the buttons below.</div>'
+    var nxt=busy?'':an&&way==='gps'?'<div class="next">&#128073; '+n+' corners taken. Stand on the next corner and press <b>Capture corner '+(n+1)+'</b>. When all corners are done, press <b>Save plot</b>.</div>'
+      :an?'<div class="next">&#9989; <b>Area is ready.</b> Save the plot, or fix it with the buttons below.</div>'
       :way==='gps'&&!n?'<div class="next">&#128073; Stand on the first corner and press <b>Capture corner 1</b>.</div>'
       :n?'<div class="next">&#128073; <b>Next:</b> add corner '+(n+1)+'. You need at least 3 corners to get the area.</div>'
       :'<div class="next">&#128073; Your sketch is kept. Open it to carry on.</div>';
     var sum=(an&&!busy)?'<div class="card"><div class="sumc"><div><div class="sumn">'+fa(an.net,u0)+' <small>'+UNIT[u0].l+'</small></div><div class="mut small">'+n+' points &middot; error about ±'+(an.rel*100).toFixed(1)+'%</div></div><button class="pri" id="bSave">Save plot</button></div><div class="row" style="margin-top:10px"><input id="fName" aria-label="Plot name" placeholder="Plot name" value="'+esc(d.name)+'" autocomplete="off"><input id="fPlace" aria-label="Place" placeholder="Place / survey no." value="'+esc(d.place)+'" autocomplete="off"></div></div>':'';
     var meth='';
     if(way==='gps'){
-      meth='<div class="card"><div class="gh hsh">&#128205; <b>'+(an&&!busy?'Add or retake corners':'Measure with GPS')+'</b></div><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Stand on each corner</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk the boundary</button></div>';
+      meth='<div class="card"><div class="gh hsh">&#128205; <b>'+'Measure with GPS'+'</b></div><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Stand on each corner</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk the boundary</button></div>';
       if(d.mode==='corners'){
         if(S.cap){
           var idx=S.cap.replace>=0?S.cap.replace+1:n+1;
@@ -2927,7 +2928,7 @@ function renderMeasure(){
       +'<button id="bRec">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'<small>The deed or Ente Bhoomi.</small></button>'
       +(fieldOk?'<button id="bField">&#129517; Check with a tape<small>Check this draft on the ground.</small></button>':'')+'</div></div>';
     var res=(an&&!busy)?'<div class="card"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"></div>':'';
-    h=top+nxt+sum+((an&&!busy)?act+mm+res+meth:meth+mm+act+res);
+    h=top+nxt+sum+((an&&!busy&&way!=='gps')?act+mm+res+meth:meth+mm+act+res);
   }
   $('#app').innerHTML=h;
   M.mm=$('#mmc');M.mmRaf=0;
