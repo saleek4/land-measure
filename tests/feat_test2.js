@@ -15,7 +15,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const dist = (a, b) => { const k = 111320; return Math.hypot((b.lon - a.lon) * k * Math.cos(11.05 * Math.PI / 180), (b.lat - a.lat) * 110574); };
 
   // ---- tape lengths from the Measure tab
-  await page.click('#bTape'); await page.waitForSelector('#tN');
+  await TH.startWay(page, 'tape'); await page.waitForSelector('#tN');
   await page.screenshot({ path: TH.shot('g1_tape_empty.png') });
   ok(await page.isDisabled('#tPlace'), 'Put on the map is disabled until all lengths are typed');
   const sides = [40, 25, 40, 25];

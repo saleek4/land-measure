@@ -18,7 +18,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const mode = async (m) => { await page.click('#skModes [data-sm="' + m + '"]'); await page.waitForTimeout(80); };
   const text = (s) => page.innerText(s);
 
-  await page.click('#bSketch'); await page.waitForSelector('#skSvg');
+  await TH.startWay(page, 'sk'); await page.waitForSelector('#skSvg');
   for (const p of [[150, 80], [210, 80], [210, 330], [150, 330]]) await tap(p[0], p[1]);
   await page.click('#skCl'); await page.waitForTimeout(100);
   // four sides of 10 m, then a cross of 40 m: a square cannot have a diagonal of 40 m

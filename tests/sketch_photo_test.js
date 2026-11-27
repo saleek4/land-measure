@@ -35,7 +35,7 @@ const V = [[110, 100], [660, 80], [720, 360], [420, 520], [90, 430]];   // the p
   const waitC = async (n, ms) => { const t = Date.now(); while (Date.now() - t < ms) { if (await nC() === n) return true; await page.waitForTimeout(100); } return false; };
 
   // ---- from a blank sketch: Start from a photo
-  await page.click('#bSketch'); await page.waitForSelector('#skSvg');
+  await TH.startWay(page, 'sk'); await page.waitForSelector('#skSvg');
   ok(await page.$('#skPh') !== null, 'a blank sketch offers "Start from a photo of the plan"');
   await page.click('#skPh'); await page.waitForSelector('#phPick', { state: 'attached' });
   ok(await page.$('#phCam') !== null && await page.$('#phPick') !== null, 'the sheet has Take a photo and Choose a picture');

@@ -109,7 +109,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   await page.click('#hDone'); await page.waitForTimeout(200);
 
   // ---- Measure tab: Undo last / Redo
-  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('lm.draft.v1')); d.holes = []; localStorage.setItem('lm.draft.v1', JSON.stringify(d)); }); await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('lm.draft.v1')); d.holes = []; d.tape = null; d.corners.forEach(c => { delete c.src; }); localStorage.setItem('lm.draft.v1', JSON.stringify(d)); }); await page.reload(); await page.waitForTimeout(500);
   await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bUndo');
   const m6 = await key();
   ok(!(await vis('#bRedo')), 'no Redo on the Measure tab at first');

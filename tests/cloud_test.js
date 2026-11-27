@@ -53,7 +53,7 @@ async function firebase(route) {
     return { ctx, page, errs };
   };
   const mk = async (page, name, w, h) => {
-    await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bTape'); await page.click('#bTape'); await page.waitForSelector('#tN');
+    await TH.startWay(page, 'tape'); await page.waitForSelector('#tN');
     await page.selectOption('#tN', { value: '4' });
     const sd = [w, h, w, h]; for (let i = 0; i < 4; i++) await page.fill('input[data-s="' + i + '"]', String(sd[i]));
     await page.fill('input[data-d="0-2"]', Math.hypot(w, h).toFixed(3)); await page.waitForTimeout(200);

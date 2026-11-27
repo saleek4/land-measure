@@ -16,7 +16,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const mode = async (m) => { await page.click('#skModes [data-sm="' + m + '"]'); await page.waitForTimeout(80); };
   // is the corner circle itself what you touch at its middle (not a button)?
   const touchable = async () => page.$$eval('#skSvg circle.skc', cs => cs.map(c => { const r = c.getBoundingClientRect(), e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!e && !e.closest('#skZ') && !!e.closest('svg'); }));
-  await page.click('#bSketch'); await page.waitForSelector('#skSvg');
+  await TH.startWay(page, 'sk'); await page.waitForSelector('#skSvg');
   // a wide plot, the corners as far right and as low as they go
   for (const p of [[40, 60], [340, 60], [340, 400], [40, 400]]) await tap(p[0], p[1]);
   await page.click('#skCl'); await page.waitForTimeout(150);

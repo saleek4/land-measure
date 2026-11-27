@@ -20,6 +20,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   await page.click('nav button[data-tab=measure]'); await page.waitForTimeout(400);
   chip = await page.innerText('#gpsChip'); ok(/ft/.test(chip) && !/ m$/.test(chip), 'GPS chip shows feet: ' + chip);
   // capture a 60 x 50 m square by GPS
+  await TH.startWay(page, 'gps'); await page.waitForTimeout(300);
   const lat0 = 11.05, lon0 = 76.07, mLat = 110574, mLon = 111320 * Math.cos(lat0 * Math.PI / 180);
   for (const [x, y] of [[0, 0], [60, 0], [60, 50], [0, 50]]) {
     await ctx.setGeolocation({ latitude: lat0 + y / mLat, longitude: lon0 + x / mLon, accuracy: 3 }); await page.waitForTimeout(300);

@@ -10,7 +10,8 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   await ctx.addInitScript(() => { try { localStorage.setItem('lm.backupask.v1', String(Date.now())); } catch (e) {} try { localStorage.setItem('lm.settings.v1', JSON.stringify({ dur: 2, maxAcc: 20, unit: 'cent' })); } catch (e) {} });
   const page = await ctx.newPage(); const errs = []; page.on('pageerror', e => errs.push(String(e)));
   await page.goto('http://localhost:8776/'); await page.waitForTimeout(600);
-  ok(await page.isVisible('#mmc'), 'mini map card is shown on Measure tab');
+  await TH.startWay(page, 'gps'); await page.waitForTimeout(300);
+  ok(await page.isVisible('#mmc'), 'mini map card is shown while measuring with GPS');
   let info = await page.innerText('#mmInfo'); ok(/You are here/.test(info), 'GPS already on at start: "You are here" shown: ' + info.replace(/\n/g, ' ').slice(0, 70));
   ok(!(await page.isVisible('#mmGps')), 'show-me button hidden while GPS works');
   await page.screenshot({ path: TH.shot('mini2_gps.png') });
@@ -61,7 +62,7 @@ print(json.dumps({'n':len(xs),'cx':sum(xs)/max(1,len(xs)),'cy':sum(ys)/max(1,len
   const c3 = await b3.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, permissions: [] });
   const p3 = await c3.newPage(); await p3.goto('http://localhost:8776/'); await p3.click('nav button[data-tab=map]'); await p3.waitForSelector('#mapc'); await p3.waitForTimeout(1200);
   ok(!(await p3.isVisible('#ov.on')), 'no blocked-location popup when the map auto-starts GPS');
-  await p3.click('nav button[data-tab=measure]'); await p3.waitForTimeout(500);
+  await TH.startWay(p3, 'gps'); await p3.waitForTimeout(500);
   ok(await p3.isVisible('#mmGps'), 'without GPS the Show where I am button is shown');
   await b2.close(); await b3.close(); srv.close();
 })().catch(e => { console.log('FAIL ' + e.message); process.exit(1); });

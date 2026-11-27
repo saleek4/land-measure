@@ -57,6 +57,9 @@ label.fb{display:block;text-align:center;font-weight:600;font-size:16px;border-r
 .gh{font-size:15px;margin:0 0 8px}.next{margin:2px 2px 10px;padding:10px 12px;background:var(--soft);border-radius:12px;font-size:14.5px;line-height:1.4}
 button.optp{border:2px solid var(--acc);background:var(--soft)}
 .hsh{display:flex;align-items:center;gap:8px;margin:0 0 6px}.hsh b{font-size:16px}.hsh .hsv{margin-left:auto;width:auto;margin-top:0;padding:5px 8px}.hsh .sm{margin-left:auto;padding:8px 14px;font-size:14px}.hs button.opt:first-of-type{margin-top:2px}
+.hero{padding:16px}.hero .hl{font-size:20px;font-weight:800;margin:0 0 4px}.hero .mut{margin-bottom:14px}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 2px 8px}.ph b{font-size:17px}.ph button{flex:0 0 auto;padding:8px 14px;font-size:14px}
+details.help{padding:0}details.help summary{font-weight:700;font-size:15px;padding:14px;cursor:pointer}details.help[open] summary{padding-bottom:6px}details.help>*:not(summary){margin:0 14px 14px}
 .kchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.kchips button{padding:7px 12px;font-size:14px;border-radius:999px}.kchips button.on{background:var(--acc);color:var(--accInk)}
 .hpl{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;background:var(--card);border:1px solid var(--line);font-weight:400}.hpl b{display:block;font-size:16px}.hpl small{display:block;color:var(--mut);font-size:13px}.hpl .hpa{font-weight:800;font-size:18px;text-align:right;white-space:nowrap}.hpl .hpa small{display:inline;font-size:13px;font-weight:600}
 .nm{display:flex;gap:8px;padding:10px}.nm input{flex:1;min-width:0}
@@ -172,7 +175,7 @@ body.maptab #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
   <button data-tab="measure"><b>&#127968;</b>Home</button>
   <button data-tab="map"><b>&#128752;&#65039;</b>Map</button>
   <button data-tab="plots"><b>&#128209;</b>Plots</button>
-  <button data-tab="more"><b>&#9881;&#65039;</b>More</button>
+  <button data-tab="more"><b>&#9881;&#65039;</b>Settings</button>
 </nav>
 <div id="ov"><div id="sheet"></div></div>
 <div id="toast"></div>
@@ -638,7 +641,7 @@ var S={
   draft:Object.assign({name:'',place:'',notes:'',mode:'corners',corners:[],holes:[],rec:null,tape:null},load(K.draft,{})),
   gps:{watching:false,id:null,lat:null,lon:null,acc:null,rx:0,err:null},
   motion:{on:false,asked:false,big:0},
-  cap:null,walk:null,wake:null
+  cap:null,walk:null,wake:null,way:''
 };
 if(!UNIT[S.settings.unit])S.settings.unit='cent';
 function saveDraft(){store(K.draft,S.draft)}
@@ -778,7 +781,7 @@ function acctStatus(){
 function acctUi(){var el=$('#acMsg');if(el)el.innerHTML=acctStatus();if(S.tab==='plots'&&!S.viewId&&!document.activeElement.matches('#fSearch'))renderPlots()}
 function acctCardHTML(){
   var t='<div class="card"><h2>Account and cloud backup</h2>';
-  if(!fbOn())return t+'<div class="mut small">Not switched on in this version yet. Use the file backup below.</div></div>';
+  if(!fbOn())return t+'<div class="mut small">Not switched on in this version yet. Use the file backup above.</div></div>';
   if(!AC.u)return t+'<div class="mut small">Sign in with your email. Your plots are then saved in your own account and come back on any phone, even if you delete the icon.</div><label>Email</label><input id="acE" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" placeholder="you@gmail.com"><label>Password</label><input id="acP" type="password" autocomplete="current-password" placeholder="at least 6 characters"><div class="row" style="margin-top:10px"><button class="pri" id="acIn">Sign in</button><button id="acUp">Create account</button></div><button id="acForgot" style="width:100%;margin-top:8px">Forgot password</button><div class="small" id="acMsg" style="margin-top:8px;color:var(--bad)">'+acctStatus()+'</div><div class="mut small" style="margin-top:6px">First time: tap Create account. Only plots are saved in the cloud. Photos of points stay on the phone.</div></div>';
   return t+'<div class="small">Signed in as <b>'+esc(AC.u.email)+'</b></div><div class="small" id="acMsg" style="margin-top:6px">'+acctStatus()+'</div><div class="row" style="margin-top:10px"><button class="pri" id="acSync">Sync now</button><button id="acOut">Sign out</button></div><div class="mut small" style="margin-top:8px">Plots sync by themselves when you save, change or delete one. Photos of points stay on the phone.</div></div>';
 }
@@ -1790,6 +1793,8 @@ function leaveModes(){
   if(M.ring>=0&&S.draft.holes[M.ring]&&S.draft.holes[M.ring].corners.length<3){S.draft.holes.splice(M.ring,1);saveDraft();gcPhotos()}
   M.ring=-1;M.split=null;M.mv=false;M.loupe=null;M.sel=-1;
 }
+function toolEdit(){closeSheet();MS.add='edit';M.edit=null;M.sel=-1;saveView();mapBottom();scheduleDraw();toast('Tap a side or a point to edit it')}
+function toolMove(){closeSheet();M.mv=true;M.lastPanel='';mapBottom();scheduleDraw()}
 function toolsSheet(){
   var o=cobj(),ok=o.corners.length>=3,hs=o.holes||[];
   var fieldOk=!M.view&&o.mode==='corners'&&o.corners.length>=3&&o.corners.length<=12;
@@ -1802,10 +1807,9 @@ function toolsSheet(){
     +'<button id="tHole"'+(ok?'':' disabled')+'>&#10134; Exclude an area<small>Take a house, pond or road out.</small></button>'
     +(hs.length?'<button id="tHoles">Excluded areas ('+hs.length+')<small>Edit or remove.</small></button>':'')
     +'</div><div class="tgrp">Check and compare</div><div class="tools">'
-    +'<button id="tRec"'+(ok?'':' disabled')+'>&#128203; Record area<small>'+(o.rec?'Record: '+fa(o.rec.a,o.rec.u)+' '+UNIT[o.rec.u].l+'. Tap to change.':'Compare with the deed or Ente Bhoomi.')+'</small></button>'
-    +'<button id="tSketch">&#9999;&#65039; Draw a sketch<small>Draw it, type each tape length.</small></button>'
-    +'<button id="tTape">&#128208; Tape lengths (list)<small>Type side lengths in a list.</small></button>'
-    +'<button id="tField"'+(fieldOk?'':' disabled')+'>&#129517; Field plan<small>Check the draft on the ground with a tape.</small></button>'
+    +'<button id="tRec"'+(ok?'':' disabled')+'>&#128203; Compare with record area<small>'+(o.rec?'Record: '+fa(o.rec.a,o.rec.u)+' '+UNIT[o.rec.u].l+'. Tap to change.':'The deed or Ente Bhoomi.')+'</small></button>'
+    +'<button id="tField"'+(fieldOk?'':' disabled')+'>&#129517; Check with a tape<small>Check this draft on the ground.</small></button>'
+    +'<button id="tTape">&#128208; Tape lengths (list)<small>Type side lengths; the plot is worked out from them.</small></button>'
     +'</div><div class="row"><button id="tClose">Close</button></div>');
   var q=function(s){return $(s)};
   q('#tClose').onclick=closeSheet;
@@ -1814,13 +1818,12 @@ function toolsSheet(){
   if(q('#tHoles'))q('#tHoles').onclick=holesSheet;
   q('#tRec').onclick=function(){recSheet(o,function(){M.lastPanel='';scheduleDraw();mapBottom()})};
   q('#tFit').onclick=function(){fitSheet(o,function(){})};
-  q('#tEdit').onclick=function(){closeSheet();MS.add='edit';M.edit=null;M.sel=-1;saveView();mapBottom();scheduleDraw();toast('Tap a side or a point to edit it')};
+  q('#tEdit').onclick=toolEdit;
   q('#tTape').onclick=function(){tapeSheet()};
-  q('#tSketch').onclick=function(){closeSheet();skOpen()};
   q('#tField').onclick=fpSheet;
   q('#tMove').onclick=function(){
     if(!canMoveAll(o)){toast('Move works for plots from tape lengths or map points. GPS points would lose their position');return}
-    closeSheet();M.mv=true;M.lastPanel='';mapBottom();scheduleDraw();
+    toolMove();
   };
 }
 
@@ -2809,92 +2812,131 @@ function canMRedo(){var r=M.mrdo&&M.mrdo[M.mrdo.length-1];if(r&&r.len===S.draft.
 // how a saved plot was made: sketch, plan (tape lengths), map (satellite points) or gps
 function plotKind(p){return p.tape&&p.tape.sk?'sketch':p.src==='tape'?'plan':p.src==='map'?'map':'gps'}
 function kindCount(k){return S.plots.filter(function(p){return plotKind(p)===k}).length}
-function savedLink(k){var c=kindCount(k);return c?'<button class="lnk hsv" data-kind="'+k+'">'+c+' saved &rsaquo;</button>':'<span class="mut small" style="margin-left:auto">none saved yet</span>'}
-function secCard(ic,title,kind,body){return'<div class="card hs"><div class="hsh"><span>'+ic+'</span><b>'+title+'</b>'+savedLink(kind)+'</div>'+body+'</div>'}
-// "+ New plot": pick how to measure; a plot that is not saved yet is saved or thrown away first
+// "Measure a new plot": three ways. A plot that is not saved yet is saved or thrown away first.
 function newPlotSheet(){
-  var d=S.draft;if(S.cap||S.walk){toast('Finish or cancel the GPS reading first');return}
-  var sk0=d.sk&&d.sk.pts&&d.sk.pts.length;
-  sheet('<h3>New plot</h3><div class="mut">How do you want to measure it?</div>'
-    +'<button class="opt" data-m="sk"><span class="ic">&#9999;&#65039;</span><span><b>Sketch</b><small>Draw it by hand, type each tape length.</small></span></button>'
-    +'<button class="opt" data-m="photo"><span class="ic">&#128247;</span><span><b>Photo of the paper plan</b><small>The sketch is made from the photo.</small></span></button>'
-    +'<button class="opt" data-m="gps"><span class="ic">&#128205;</span><span><b>GPS on the land</b><small>Stand on each corner, or walk the boundary.</small></span></button>'
-    +'<button class="opt" data-m="map"><span class="ic">&#128752;&#65039;</span><span><b>Satellite map</b><small>Tap the corners on the map. No GPS needed.</small></span></button>'
-    +'<button class="opt" data-m="tape"><span class="ic">&#128208;</span><span><b>Tape lengths in a list</b><small>Type the sides and crosses.</small></span></button>'
+  if(S.cap||S.walk){toast('Finish or cancel the GPS reading first');return}
+  sheet('<h3>Measure a new plot</h3><div class="mut">Where are you, or what do you have?</div>'
+    +'<button class="opt" data-m="gps"><span class="ic">&#128205;</span><span><b>I am on the land</b><small>Use the phone GPS. Stand on each corner, or walk the boundary.</small></span></button>'
+    +'<button class="opt" data-m="map"><span class="ic">&#128752;&#65039;</span><span><b>I am looking at the map</b><small>Tap the corners on the satellite map. No GPS needed.</small></span></button>'
+    +'<button class="opt" data-m="plan"><span class="ic">&#128208;</span><span><b>I have a plan or tape lengths</b><small>Draw a sketch, use a photo of the paper plan, or type tape lengths.</small></span></button>'
     +'<div class="row" style="margin-top:10px"><button id="npX">Cancel</button></div>');
   $('#npX').onclick=closeSheet;
-  $('#sheet').onclick=function(e){var b=e.target.closest('button[data-m]');if(!b)return;var m=b.dataset.m;closeSheet();
-    var start=function(){
-      if(m==='sk')skOpen();
-      else if(m==='photo'){skOpen();skPhotoSheet()}
-      else if(m==='tape'){S.tab='measure';render();tapeSheet()}
-      else if(m==='map'){M.refit=true;S.tab='map';render()}
-      else{S.tab='measure';render();var g=document.querySelector('#bCap,#bWalk');if(g&&g.scrollIntoView)g.scrollIntoView({block:'center'})}
-    };
-    var an=anOf(d);
-    if(!d.corners.length&&!sk0){start();return}
-    var o=[];if(an&&d.corners.length>=3)o.push({label:'Save it, then start new',val:'s',cls:'pri'});
-    o.push({label:'Throw it away',val:'t',cls:'danger'});o.push({label:'Keep working on it',val:'k'});
-    choose('Start a new plot?','The plot you are working on is not saved yet.',o).then(function(v){
-      if(v==='k'||v===undefined)return;
-      if(v==='s'){S.plots.unshift(buildPlot(d));savePlots()}
-      S.draft=blankDraft(d.mode);saveDraft();M.mrdo=[];M.ring=-1;gcPhotos();start();
-    });
-  };
+  $('#sheet').onclick=function(e){var b=e.target.closest('button[data-m]');if(!b)return;
+    if(b.dataset.m==='plan'){planWaySheet();return}
+    closeSheet();beginPlot(b.dataset.m)};
 }
+function planWaySheet(){
+  sheet('<h3>From a plan</h3><div class="mut">What do you have?</div>'
+    +'<button class="opt" data-m="sk"><span class="ic">&#9999;&#65039;</span><span><b>Draw a sketch</b><small>Draw it by hand, then type each tape length.</small></span></button>'
+    +'<button class="opt" data-m="photo"><span class="ic">&#128247;</span><span><b>Photo of the paper plan</b><small>The sketch is made from the photo.</small></span></button>'
+    +'<button class="opt" data-m="tape"><span class="ic">&#128209;</span><span><b>Tape lengths in a list</b><small>Type the sides and crosses.</small></span></button>'
+    +'<div class="row" style="margin-top:10px"><button id="npB">&larr; Back</button><button id="npX">Cancel</button></div>');
+  $('#npB').onclick=newPlotSheet;$('#npX').onclick=closeSheet;
+  $('#sheet').onclick=function(e){var b=e.target.closest('button[data-m]');if(!b)return;closeSheet();beginPlot(b.dataset.m)};
+}
+function beginPlot(m){
+  var d=S.draft,sk0=d.sk&&d.sk.pts&&d.sk.pts.length;
+  var start=function(){
+    S.way='';
+    if(m==='sk')skOpen();
+    else if(m==='photo'){skOpen();skPhotoSheet()}
+    else if(m==='tape'){S.tab='measure';render();tapeSheet()}
+    else if(m==='map'){M.refit=true;S.tab='map';render()}
+    else{S.way='gps';S.tab='measure';render();startGPS(true)}
+  };
+  var an=anOf(d);
+  if(!d.corners.length&&!sk0){start();return}
+  var o=[];if(an&&d.corners.length>=3)o.push({label:'Save it, then start new',val:'s',cls:'pri'});
+  o.push({label:'Throw it away',val:'t',cls:'danger'});o.push({label:'Keep working on it',val:'k'});
+  choose('Start a new plot?','The plot you are working on is not saved yet.',o).then(function(v){
+    if(v==='k'||v===undefined)return;
+    if(v==='s'){S.plots.unshift(buildPlot(d));savePlots()}
+    S.draft=blankDraft(d.mode);saveDraft();M.mrdo=[];M.ring=-1;gcPhotos();start();
+  });
+}
+// how the plot in progress is being measured: 'gps', 'map', 'plan' (sketch or tape lengths), or '' when nothing was started
+function draftWay(d){
+  var n=d.corners.length,sk=d.sk&&d.sk.pts&&d.sk.pts.length;
+  if(S.cap||S.walk)return 'gps';
+  if(!n)return sk?'plan':(S.way||'');
+  if(d.tape||d.corners.some(function(c){return c.src==='tape'}))return 'plan';
+  if(d.corners.every(function(c){return c.src==='map'}))return 'map';
+  return 'gps';
+}
+// run a map tool from the Home result buttons: go to the map, then start the tool there
+function homeTool(fn){leaveModes();M.view=null;M.refit=true;S.tab='map';render();fn()}
 function renderMeasure(){
   if(S.tab!=='measure')return;
   var d=S.draft,n=d.corners.length,an=anOf(d),busy=!!(S.cap||S.walk);
-  var u0=S.settings.unit;
-  var fresh=!n&&!busy,sk0=d.sk&&d.sk.pts&&d.sk.pts.length;
-  var nmc='<div class="card nm"><input id="fName" aria-label="Plot name" placeholder="Plot name" value="'+esc(d.name)+'" autocomplete="off"><input id="fPlace" aria-label="Place" placeholder="Place / survey no." value="'+esc(d.place)+'" autocomplete="off"></div>';
-  var mmcard='<div class="card" id="mmCard" style="padding:0;overflow:hidden"><div style="position:relative"><canvas id="mmc" aria-label="Satellite map of your corners"></canvas><button class="mmg" id="mmGps">&#128205; Show where I am</button></div><div id="mmInfo" class="small" style="padding:8px 12px"></div></div>';
-  var sum='';
-  if(an&&!busy)sum='<div class="card sumc"><div><div class="sumn">'+fa(an.net,u0)+' <small>'+UNIT[u0].l+'</small></div><div class="mut small">'+n+' points &middot; error about ±'+(an.rel*100).toFixed(1)+'%</div></div><button class="pri" id="bSave">Save plot</button></div>';
-  var gps='<div class="card"><div class="gh hsh">&#128205; <b>Use GPS on the land</b>'+(busy?'':savedLink('gps'))+'</div><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Corner points</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk boundary</button></div>';
-  if(d.mode==='corners'){
-    if(S.cap){
-      var idx=S.cap.replace>=0?S.cap.replace+1:n+1;
-      gps+='<div><b>Capturing corner '+idx+'</b>. Stand still at the corner.</div><div class="bar"><i id="capbar"></i></div><div class="mut small" id="captxt">Starting…</div><div class="row" style="margin-top:12px"><button class="pri" id="bUse">Use now</button><button id="bCancel">Cancel</button></div>';
-    }else{
-      gps+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark and hold the phone steady. Go round the plot in order.</div>'+(n?'':'<details class="tip"><summary>Tips for a good reading</summary><div class="mut small">Hold the phone in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving.</div></details>');
-      if(n){gps+='<button id="bPlace" class="lnk">&#128205; GPS weak? Place corner '+(n+1)+' on the satellite map</button><div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">&#8630; Undo last</button>'+(canMRedo()?'<button id="bRedo">&#8631; Redo</button>':'')+'<button id="bClear" class="danger">Start over</button></div>'}
-    }
+  var u0=S.settings.unit,way=draftWay(d),sk0=d.sk&&d.sk.pts&&d.sk.pts.length;
+  var h='';
+  if(!way){
+    // ---- nothing in progress: one big button, then the saved plots
+    var hplRow=function(p){return'<button class="hpl" data-id="'+p.id+'"><span><b>'+esc(p.name)+'</b><small>'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</small></span><span class="hpa">'+fa(p.area,u0)+' <small>'+UNIT[u0].l+'</small></span></button>'};
+    h='<div class="card hero"><div class="hl">Measure a plot</div><div class="mut">Walk it with GPS, mark it on the satellite map, or use a paper plan.</div><button class="pri big" id="bNewPlot">&#65291; Measure a new plot</button></div>'
+      +backupCard()
+      +'<div class="card hs"><div class="hsh"><b>Your plots</b> <span class="mut small">('+S.plots.length+')</span>'+(S.plots.length>3?'<button class="lnk hsv" id="hplAll">See all &rsaquo;</button>':'')+'</div>'
+      +(S.plots.length?S.plots.slice(0,3).map(hplRow).join(''):'<div class="mut small">Nothing saved yet. Your measured plots will show here.</div>')+'</div>'
+      +'<button id="bConv" class="lnk">&#128260; Unit converter (cent, sq ft, guntha &hellip;)</button>';
   }else{
-    if(S.walk){
-      gps+='<div><b>Walking…</b> Follow the boundary and return to where you started.</div><div class="mut small" id="walktxt" style="margin:8px 0">Waiting for GPS…</div><div class="row"><button class="pri" id="bWalkEnd">Finish</button><button id="bWalkCancel">Cancel</button></div>';
-    }else{
-      gps+='<button class="pri big" id="bWalk">'+(n?'Walk again':'Start walking')+'</button><div class="mut small" style="margin-top:8px">Start at one corner, walk slowly along the boundary, come back to the start, then tap Finish.</div><details class="tip"><summary>When to use this</summary><div class="mut small">Good for large plots. Corners get slightly rounded.</div></details>';
-      if(n)gps+='<div class="row" style="margin-top:12px"><button id="bClear" class="danger">Start over</button></div>';
+    // ---- a plot in progress: how it is going, then the result and what to do next
+    var wayName={gps:'GPS on the land',map:'Satellite map',plan:'Plan or tape lengths'}[way];
+    var top='<div class="ph"><div><b>Plot in progress</b><div class="mut small">'+wayName+(n?' &middot; '+n+' point'+(n===1?'':'s'):'')+'</div></div>'+(busy?'':(n||sk0?'<button id="bNewPlot">New plot</button>':'<button id="bWayX">Cancel</button>'))+'</div>';
+    var nxt=busy?'':an?'<div class="next">&#9989; <b>Area is ready.</b> Save the plot, or fix it with the buttons below.</div>'
+      :way==='gps'&&!n?'<div class="next">&#128073; Stand on the first corner and press <b>Capture corner 1</b>.</div>'
+      :n?'<div class="next">&#128073; <b>Next:</b> add corner '+(n+1)+'. You need at least 3 corners to get the area.</div>'
+      :'<div class="next">&#128073; Your sketch is kept. Open it to carry on.</div>';
+    var sum=(an&&!busy)?'<div class="card"><div class="sumc"><div><div class="sumn">'+fa(an.net,u0)+' <small>'+UNIT[u0].l+'</small></div><div class="mut small">'+n+' points &middot; error about ±'+(an.rel*100).toFixed(1)+'%</div></div><button class="pri" id="bSave">Save plot</button></div><div class="row" style="margin-top:10px"><input id="fName" aria-label="Plot name" placeholder="Plot name" value="'+esc(d.name)+'" autocomplete="off"><input id="fPlace" aria-label="Place" placeholder="Place / survey no." value="'+esc(d.place)+'" autocomplete="off"></div></div>':'';
+    var meth='';
+    if(way==='gps'){
+      meth='<div class="card"><div class="gh hsh">&#128205; <b>'+(an&&!busy?'Add or retake corners':'Measure with GPS')+'</b></div><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Stand on each corner</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk the boundary</button></div>';
+      if(d.mode==='corners'){
+        if(S.cap){
+          var idx=S.cap.replace>=0?S.cap.replace+1:n+1;
+          meth+='<div><b>Capturing corner '+idx+'</b>. Stand still at the corner.</div><div class="bar"><i id="capbar"></i></div><div class="mut small" id="captxt">Starting…</div><div class="row" style="margin-top:12px"><button class="pri" id="bUse">Use now</button><button id="bCancel">Cancel</button></div>';
+        }else{
+          meth+='<button class="pri big" id="bCap">Capture corner '+(n+1)+'</button><div class="mut small" style="margin-top:8px">Stand on the corner mark and hold the phone steady. Go round the plot in order.</div>'+(n?'':'<details class="tip"><summary>Tips for a good reading</summary><div class="mut small">Hold the phone in front of your chest, above the mark, and do not walk or sway. The phone averages GPS for '+S.settings.dur+' s and skips readings while it is moving.</div></details>');
+          if(n){meth+='<button id="bPlace" class="lnk">&#128205; GPS weak? Place corner '+(n+1)+' on the satellite map</button><div class="corners">'+d.corners.map(function(c,i){return'<button data-c="'+i+'">'+(i+1)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+'</button>'}).join('')+'</div><div class="row" style="margin-top:12px"><button id="bUndo">&#8630; Undo last</button>'+(canMRedo()?'<button id="bRedo">&#8631; Redo</button>':'')+'<button id="bClear" class="danger">Start over</button></div>'}
+        }
+      }else{
+        if(S.walk){
+          meth+='<div><b>Walking…</b> Follow the boundary and return to where you started.</div><div class="mut small" id="walktxt" style="margin:8px 0">Waiting for GPS…</div><div class="row"><button class="pri" id="bWalkEnd">Finish</button><button id="bWalkCancel">Cancel</button></div>';
+        }else{
+          meth+='<button class="pri big" id="bWalk">'+(n?'Walk again':'Start walking')+'</button><div class="mut small" style="margin-top:8px">Start at one corner, walk slowly along the boundary, come back to the start, then tap Finish.</div><details class="tip"><summary>When to use this</summary><div class="mut small">Good for large plots. Corners get slightly rounded.</div></details>';
+          if(n)meth+='<div class="row" style="margin-top:12px"><button id="bClear" class="danger">Start over</button></div>';
+        }
+      }
+      meth+='</div>';
+    }else if(!busy&&way==='plan'){
+      var bp=sk0?'<button id="bSketch" class="opt optp"><span class="ic">&#9999;&#65039;</span><span><b>Continue your sketch</b><small>'+d.sk.pts.length+' corners drawn. Tap to carry on.</small></span></button><button id="bSketchNew" class="lnk">Start a new sketch instead</button>'
+        :'<button id="bTape" class="opt"><span class="ic">&#128208;</span><span><b>Edit tape lengths</b><small>Change a side, a cross, or the corners.</small></span></button>';
+      meth='<div class="card"><div class="gh hsh">&#128208; <b>Plan or tape lengths</b></div>'+bp+'</div>';
     }
+    var mm='<div class="card" id="mmCard" style="padding:0;overflow:hidden"><div style="position:relative"><canvas id="mmc" aria-label="Satellite map of your corners"></canvas><button class="mmg" id="mmGps">&#128205; Show where I am</button></div><div id="mmInfo" class="small" style="padding:8px 12px"></div>'+(busy?'':'<div style="padding:0 12px 12px"><button id="bToMap" class="'+(way==='map'?'pri':'')+'" style="width:100%">&#128752;&#65039; '+(way==='map'?'Open the satellite map':'View and edit on the satellite map')+'</button></div>')+'</div>';
+    var fieldOk=!busy&&d.mode==='corners'&&n>=3&&n<=12;
+    var act='';
+    if(an&&!busy)act='<div class="card"><h2>What next?</h2>'
+      +'<div class="tgrp">Fix the shape</div><div class="tools">'
+      +'<button id="aEdit">&#10021; Edit sides and points<small>Change a length or angle, nudge or add a point.</small></button>'
+      +'<button id="aFit">&#127919; Fit to a wanted area<small>Say 94 cent; one point moves to match.</small></button>'
+      +'<button id="aMove">&#128260; Move or turn<small>Slide the plot onto the right place.</small></button></div>'
+      +'<div class="tgrp">Divide the land</div><div class="tools">'
+      +'<button id="aSplit">&#9986; Split this plot<small>Equal parts, ratio, cents, road strip.</small></button>'
+      +'<button id="aHole">&#10134; Exclude an area<small>Take a house, pond or road out.</small></button></div>'
+      +'<div class="tgrp">Check and compare</div><div class="tools">'
+      +'<button id="bRec">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'<small>The deed or Ente Bhoomi.</small></button>'
+      +(fieldOk?'<button id="bField">&#129517; Check with a tape<small>Check this draft on the ground.</small></button>':'')+'</div></div>';
+    var res=(an&&!busy)?'<div class="card"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"></div>':'';
+    h=top+nxt+sum+((an&&!busy)?act+mm+res+meth:meth+mm+act+res);
   }
-  gps+='</div>';
-  var tSk=busy?'':'<button id="bSketch" class="opt optp"><span class="ic">&#9999;&#65039;</span><span><b>'+(sk0?'Continue your sketch':fresh?'New sketch':'Draw a sketch')+'</b><small>'+(sk0?d.sk.pts.length+' corners drawn. Tap to carry on.':'Draw it by hand, then type each tape length.')+'</small></span></button>';
-  var tMap=busy?'':'<button id="bToMap" class="opt"><span class="ic">&#128752;&#65039;</span><span><b>'+(n?'View on satellite map':'Mark on satellite map')+'</b><small>'+(n?'See, drag and edit the corners.':'Tap the corners on the map. No GPS needed.')+'</small></span></button>';
-  var tTape=busy?'':'<button id="bTape" class="lnk">Type lengths in a list instead (old way)</button>';
-  var tTapeNew=busy?'':'<button id="bTape" class="opt"><span class="ic">&#128208;</span><span><b>New tape plan</b><small>Type the side and cross lengths in a list.</small></span></button>';
-  var tFld=(!busy&&d.mode==='corners'&&n>=3&&n<=12)?'<button id="bField" class="opt"><span class="ic">&#129517;</span><span><b>Field plan</b><small>Check this draft on the ground with a tape.</small></span></button>':'';
-  var hplRow=function(p){return'<button class="hpl" data-id="'+p.id+'"><span><b>'+esc(p.name)+'</b><small>'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</small></span><span class="hpa">'+fa(p.area,u0)+' <small>'+UNIT[u0].l+'</small></span></button>'};
-  var secPlots='<div class="card hs"><div class="hsh">&#128193; <b>Plots</b> <span class="mut small">('+S.plots.length+' saved)</span><button class="pri sm" id="bNewPlot">+ New plot</button></div>'+(S.plots.length?S.plots.slice(0,2).map(hplRow).join('')+(S.plots.length>2?'<button id="hplAll" class="lnk">See all '+S.plots.length+' plots</button>':''):'<div class="mut small">No saved plots yet. Press + New plot, or pick a way below.</div>')+'</div>';
-  var secPlan=secCard('&#129517;','Plan','plan','<button id="bPlanPhoto" class="opt"><span class="ic">&#128247;</span><span><b>New plan from a photo</b><small>Photo of your paper plan. The sketch is made for you.</small></span></button>'+tTapeNew);
-  var secMeasure=secCard('&#128207;','Measure','map',tMap+'<button id="bConv" class="lnk">&#128260; Unit converter (cent, sq ft, guntha &hellip;)</button>');
-  var secSketch=secCard('&#9999;&#65039;','Sketch','sketch',tSk+(sk0?'<button id="bSketchNew" class="lnk">Start a new sketch instead</button>':''));
-  var newBtn=busy?'':'<button id="bNewPlot" class="lnk" style="margin:0 0 8px">+ New plot (start again)</button>';
-  var res='';
-  if(an&&!busy)res='<div class="card" style="margin-top:12px"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<button id="bRec" style="width:100%;margin-top:10px">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'</button><label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"></div>';
-  var nxt=fresh?'<div class="next"><b>How do you want to measure?</b> Pick one below. You can save the plot after.</div>'
-    :busy?''
-    :(an?'<div class="next">&#9989; <b>Area is ready.</b> Press <b>Save plot</b> to keep it. To fix a corner, open the satellite map.</div>'
-    :'<div class="next">&#128073; <b>Next:</b> '+(n?'add corner '+(n+1)+'. You need at least 3 corners to get the area.':'start measuring.')+'</div>');
-  var h;
-  if(fresh)h=nmc+nxt+secPlots+secPlan+gps+secMeasure+secSketch+mmcard;
-  else h=nmc+nxt+newBtn+mmcard+sum+gps+(busy?'':'<div class="opts">'+tSk+tMap+tFld+'</div>'+tTape)+res;
   $('#app').innerHTML=h;
   M.mm=$('#mmc');M.mmRaf=0;
-  $('#mmc').onclick=function(){M.refit=true;S.tab='map';render()};
-  $('#mmGps').onclick=function(){startGPS();M.mmFly=true;toast('Looking for your location…');mmSched()};
-  mmSched();
   var q=function(s){return $(s)};
+  if(M.mm){
+    M.mm.onclick=function(){M.refit=true;S.tab='map';render()};
+    $('#mmGps').onclick=function(){startGPS();M.mmFly=true;toast('Looking for your location…');mmSched()};
+    mmSched();
+  }
   if(q('#fName'))q('#fName').oninput=function(){d.name=this.value;saveDraft()};
   if(q('#fPlace'))q('#fPlace').oninput=function(){d.place=this.value;saveDraft()};
   if(q('#fNotes'))q('#fNotes').oninput=function(){d.notes=this.value;saveDraft()};
@@ -2902,7 +2944,7 @@ function renderMeasure(){
   if(q('#bCap'))q('#bCap').onclick=function(){
     var g=S.gps,weak=g.watching&&g.acc!=null&&Date.now()-g.rx<=10000&&g.acc>8;
     if(!weak){startCapture();return}
-    choose('GPS is weak','Now about \u00b1'+fl(g.acc,1)+'. A corner taken now can be further off than that. Wait for \u00b18 m or better, or place this corner on the satellite map.',[{label:'Wait for a better fix',val:'w',cls:'pri'},{label:'Place on the map',val:'m'},{label:'Capture anyway',val:'c'}]).then(function(v){if(v==='c')startCapture();else if(v==='m')placeOnMap()});
+    choose('GPS is weak','Now about ±'+fl(g.acc,1)+'. A corner taken now can be further off than that. Wait for ±8 m or better, or place this corner on the satellite map.',[{label:'Wait for a better fix',val:'w',cls:'pri'},{label:'Place on the map',val:'m'},{label:'Capture anyway',val:'c'}]).then(function(v){if(v==='c')startCapture();else if(v==='m')placeOnMap()});
   };
   if(q('#bUse'))q('#bUse').onclick=finishCapture;
   if(q('#bCancel'))q('#bCancel').onclick=cancelCapture;
@@ -2913,9 +2955,8 @@ function renderMeasure(){
   if(q('#bSketch'))q('#bSketch').onclick=skOpen;
   document.querySelectorAll('.hpl').forEach(function(b){b.onclick=function(){S.viewId=b.dataset.id;S.tab='plots';render()}});
   if(q('#hplAll'))q('#hplAll').onclick=function(){S.viewId=null;S.kind='';S.filter='';S.tab='plots';render()};
-  document.querySelectorAll('.hsv[data-kind]').forEach(function(b){b.onclick=function(){S.kind=b.dataset.kind;S.viewId=null;S.filter='';S.tab='plots';render();window.scrollTo(0,0)}});
   if(q('#bNewPlot'))q('#bNewPlot').onclick=newPlotSheet;
-  if(q('#bPlanPhoto'))q('#bPlanPhoto').onclick=function(){skOpen();skPhotoSheet()};
+  if(q('#bWayX'))q('#bWayX').onclick=function(){S.way='';renderMeasure()};
   if(q('#bSketchNew'))q('#bSketchNew').onclick=function(){choose('Start a new sketch?','Your sketch ('+d.sk.pts.length+' corners) will be removed from this draft.',[{label:'Start new',val:true,cls:'danger'},{label:'Keep it',val:false}]).then(function(ok){if(ok){d.sk=null;saveDraft();gcPhotos();skOpen()}})};
   if(q('#bWalk'))q('#bWalk').onclick=startWalk;
   if(q('#bWalkEnd'))q('#bWalkEnd').onclick=finishWalk;
@@ -2927,6 +2968,14 @@ function renderMeasure(){
   if(q('#bField'))q('#bField').onclick=fpSheet;
   if(q('#bPlace'))q('#bPlace').onclick=placeOnMap;
   if(q('#bRec'))q('#bRec').onclick=function(){recSheet(d,renderMeasure)};
+  if(q('#aEdit'))q('#aEdit').onclick=function(){homeTool(toolEdit)};
+  if(q('#aFit'))q('#aFit').onclick=function(){homeTool(function(){fitSheet(cobj(),function(){})})};
+  if(q('#aMove'))q('#aMove').onclick=function(){if(!canMoveAll(d)){toast('Move works for plots from tape lengths or map points. GPS points would lose their position');return}homeTool(toolMove)};
+  if(q('#aSplit'))q('#aSplit').onclick=function(){if(an.cross){toast('The boundary lines cross. Fix the plot first');return}homeTool(openSplit)};
+  if(q('#aHole'))q('#aHole').onclick=function(){homeTool(function(){startHole()})};
+  if($('#bNow'))$('#bNow').onclick=function(){backupNow(function(){toast('Backup saved. Keep that file safe');renderMeasure()})};
+  if($('#bSign'))$('#bSign').onclick=function(){S.tab='more';render()};
+  if($('#bSyncNow'))$('#bSyncNow').onclick=function(){syncNow()};
   updateLive();
 }
 
@@ -2938,7 +2987,7 @@ function savePlot(){
   var d=S.draft,an=anOf(d);if(!an)return;
   var p=buildPlot(d);
   S.plots.unshift(p);savePlots();
-  S.draft=blankDraft(d.mode);saveDraft();M.ring=-1;
+  S.draft=blankDraft(d.mode);saveDraft();M.ring=-1;S.way='';
   S.tab='plots';S.viewId=p.id;render();toast('Saved');setTimeout(backupAsk,600);
 }
 
@@ -2946,8 +2995,8 @@ function renderPlots(){
   if(S.viewId){var p=S.plots.filter(function(x){return x.id===S.viewId})[0];if(p)return renderDetail(p);S.viewId=null}
   var kd=S.kind||'',f=S.filter.toLowerCase(),list=S.plots.filter(function(p){return(!f||(p.name+' '+p.place).toLowerCase().indexOf(f)>=0)&&(!kd||plotKind(p)===kd)});
   var chips='<div class="kchips">'+[['','All'],['sketch','Sketch'],['gps','GPS'],['map','Map'],['plan','Plan']].map(function(k){return'<button data-k="'+k[0]+'" class="'+(kd===k[0]?'on':'')+'">'+k[1]+' '+(k[0]?kindCount(k[0]):S.plots.length)+'</button>'}).join('')+'</div>';
-  var h=backupCard()+'<div class="card"><input id="fSearch" placeholder="Search by name or place" value="'+esc(S.filter)+'" autocomplete="off"><button class="pri" id="pNew" style="width:100%;margin-top:8px">+ New plot</button></div>'+chips;
-  if(!S.plots.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">No saved plots yet. Press + New plot.</div>';
+  var h=backupCard()+'<div class="card"><input id="fSearch" placeholder="Search by name or place" value="'+esc(S.filter)+'" autocomplete="off"><button class="pri" id="pNew" style="width:100%;margin-top:8px">&#65291; Measure a new plot</button></div>'+chips;
+  if(!S.plots.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">No saved plots yet. Press Measure a new plot.</div>';
   else if(!list.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">'+(kd?'No '+kd+' plots here.':'Nothing matches.')+'</div>';
   list.forEach(function(p){
     h+='<button class="plotitem" data-id="'+p.id+'"><b>'+esc(p.name)+'</b><div class="mut small">'+esc(p.place||'No place')+' · '+fdate(p.ts)+(p.src&&p.src!=='gps'?' · '+methLabel(p.src):'')+'</div><div style="margin-top:6px;font-weight:700">'+fa(p.area,S.settings.unit)+' '+UNIT[S.settings.unit].l+' <span class="mut small" style="font-weight:400">('+fa(p.area,S.settings.unit==='acre'?'cent':'acre')+' '+UNIT[S.settings.unit==='acre'?'cent':'acre'].l+')</span></div></button>';
@@ -3029,10 +3078,11 @@ function renderDetail(p){
   if(p.tape&&p.tape.sides)h+='<div class="card"><h2>Tape lengths</h2><div class="small">Sides: '+p.tape.sides.map(function(v,i){return(i+1)+'→'+((i+1)%p.tape.sides.length+1)+' <b>'+esc(v)+'</b>'}).join(' · ')+(p.tape.diags&&p.tape.diags.length?'<br>Crosses: '+(p.tape.cr||tapeCross(p.tape.sides.length,(p.tape.hub||0)%p.tape.sides.length)).map(function(c,i){return(c[0]+1)+'→'+(c[1]+1)+' <b>'+esc(p.tape.diags[i])+'</b>'}).join(' · '):'')+' ('+(p.tape.u==='ft'?'feet':'metres')+')</div></div>';
   h+='<div class="card"><h2>Corners</h2><table>'+p.corners.map(function(c,i){return'<tr><td>'+(i+1)+'</td><td style="font-weight:400;font-size:13px">'+c.lat.toFixed(6)+', '+c.lon.toFixed(6)+' · '+srcLabel(c)+'±'+fl(c.acc,1)+(c.note?'<div style="font-weight:600;margin-top:2px">'+esc(c.note)+'</div>':'')+(c.ph&&c.ph.length?'<div class="thumbs" data-ph="'+i+'"></div>':'')+'</td></tr>'}).join('')+'</table></div>';
   if(an.H.length)h+='<div class="card"><h2>Excluded areas</h2><table>'+an.H.map(function(H,i){return'<tr><td>Area '+(i+1)+'</td><td>'+fa(shoelace(H),u)+' '+UNIT[u].l+'</td></tr>'}).join('')+'</table></div>';
-  h+='<button class="pri" id="bMap" style="width:100%;margin-bottom:8px">&#128752;&#65039; View on satellite map</button>';
-  h+='<div class="row"><button id="bSplit">&#9986; Split</button><button id="bRec">&#128203; Record area</button></div>';
-  h+='<div class="row" style="margin-top:8px"><button id="bPdf">Plan PDF</button><button id="bPng">Plan picture</button><button id="bKml">KML</button></div>';
-  h+='<div class="row" style="margin-top:8px"><button id="bShare">Share summary</button><button id="bGeo">GeoJSON</button></div><div class="row" style="margin-top:8px"><button id="bRename">Rename</button><button id="bDel" class="danger">Delete</button></div>';
+  h+='<button class="pri" id="bMap" style="width:100%">&#128752;&#65039; View on satellite map</button>';
+  h+='<div class="tgrp">Work on it</div><div class="row"><button id="bSplit">&#9986; Split</button><button id="bRec">&#128203; Compare with record</button></div>';
+  h+='<div class="tgrp">Share</div><div class="row"><button id="bPdf">Plan PDF</button><button id="bPng">Plan picture</button><button id="bShare">Share summary</button></div>';
+  h+='<div class="tgrp">For other apps</div><div class="row"><button id="bKml">KML (Google Earth)</button><button id="bGeo">GeoJSON</button></div>';
+  h+='<div class="tgrp">Manage</div><div class="row"><button id="bRename">Rename</button><button id="bDel" class="danger">Delete</button></div>';
   $('#app').innerHTML=h;
   document.querySelectorAll('.thumbs[data-ph]').forEach(function(el){thumbsInto(el,p.corners[+el.dataset.ph].ph,null)});
   $('#bBack').onclick=function(){S.viewId=null;renderPlots()};
@@ -3071,16 +3121,18 @@ function convSheet(){
 function renderMore(){
   var st=S.settings;
   var opt=function(vals,cur,lab){return vals.map(function(v){return'<option value="'+v+'"'+(String(cur)===String(v)?' selected':'')+'>'+(lab?lab(v):v)+'</option>'}).join('')};
-  var h=acctCardHTML()+'<div class="card"><h2>Settings</h2><label>Averaging time per corner</label><select id="sDur">'+opt([15,30,45,60,90],st.dur,function(v){return v+' seconds'})+'</select>';
-  h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+fl(v,0)})+'</select>';
-  h+='<label>Main area unit</label><select id="sUnit">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(st.unit===k?' selected':'')+'>'+UNIT[k].n+'</option>'}).join('')+'</select>';
-  h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select><button id="mConv" style="margin-top:10px">&#128260; Unit converter (cent, sq ft, guntha &hellip;)</button></div>';
-  h+='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. <b>If you delete the Home Screen icon, or clear Safari website data, every saved plot is erased.</b> Photos are not in the backup file. Last backup: '+backupAgo()+'.</div>'+(isIOS()&&!isStandalone()?'<div class="small" style="margin-top:6px">You are in a Safari tab now. It keeps its own plots, separate from the Home Screen icon.</div>':'')+'<div class="row" style="margin-top:10px"><button id="bExp" class="pri">Back up all plots</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved. Photos of points stay on this phone and are not in the backup file.</div></div>';
-  h+='<div class="card"><h2>How accurate is this?</h2><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></div>';
-  h+='<div class="card"><h2>Satellite map</h2><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></div>';
-  h+='<div class="card"><h2>More tools (Map tab &rarr; Tools)</h2><ul class="tips small"><li><b>Split:</b> divide a plot into equal parts, by ratio, by cents, or with a road strip. Ideas are shown as small pictures. Save the parts as separate plots.</li><li><b>Exclude an area:</b> mark a house or pond. Its area is taken out and the net area is shown.</li><li><b>Record area:</b> type the area from the deed or Ente Bhoomi to see the difference in %.</li><li><b>Tape lengths:</b> type the side lengths and the crosses (tapes straight across the plot) and the app draws the plot and works out the area. It tells you the fewest crosses needed (corners &minus; 3). Tap a corner to take the crosses from it, or let the app suggest the best corner. A tape is far more exact than GPS for small plots.</li><li><b>Magnifier:</b> when you drag a point, a round magnifier shows the spot above your finger.</li><li><b>Point notes and photos:</b> tap a point to add a note or a photo.</li><li>On a saved plot you can make a <b>plan PDF</b>, a picture, or a <b>KML</b> file for Google Earth.</li></ul></div>';
-  h+='<div class="card"><h2>Tips for best results</h2><ul class="tips small"><li>Stand in the open, away from trees, walls and vehicles.</li><li>Wait until the GPS chip at the top shows green or amber before you capture.</li><li>Take all corners in one session, within about 15 minutes. Common GPS errors then cancel out in the area.</li><li>Take corners in order around the plot (clockwise or anticlockwise).</li><li>Keep the phone steady and the screen on. The app asks the phone to stay awake.</li><li>Measure again on another day or time of day and compare. If the two areas differ, trust neither fully.</li></ul></div>';
-  h+='<div class="card"><h2>Install on iPhone</h2><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li><b>Do not delete the icon.</b> Deleting it erases the plots saved inside it. Back up first (More tab, Backup).</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></div>';
+  var h='<div class="card"><h2>Backup</h2><div class="mut small">Saved plots live only on this phone, inside this app. <b>Do not delete the icon.</b> If you delete the Home Screen icon, or clear Safari website data, every saved plot is erased. Photos are not in the backup file. Last backup: '+backupAgo()+'.</div>'+(isIOS()&&!isStandalone()?'<div class="small" style="margin-top:6px">You are in a Safari tab now. It keeps its own plots, separate from the Home Screen icon.</div>':'')+'<div class="row" style="margin-top:10px"><button id="bExp" class="pri">Back up all plots</button><button id="bImp">Import</button></div><div class="row" style="margin-top:8px"><button id="bGeoAll">All as GeoJSON</button><button id="bKmlAll">All as KML</button></div><div class="mut small" style="margin-top:8px">'+S.plots.length+' plot'+(S.plots.length===1?'':'s')+' saved.</div></div>';
+  h+=acctCardHTML();
+  h+='<div class="card"><h2>Units</h2><label>Main area unit</label><select id="sUnit">'+Object.keys(UNIT).map(function(k){return'<option value="'+k+'"'+(st.unit===k?' selected':'')+'>'+UNIT[k].n+'</option>'}).join('')+'</select>';
+  h+='<label>Length unit (distances, sides, perimeter)</label><select id="sLU"><option value="m"'+(st.lunit!=='ft'?' selected':'')+'>metres (m)</option><option value="ft"'+(st.lunit==='ft'?' selected':'')+'>feet (ft)</option></select><button id="mConv" style="margin-top:10px;width:100%">&#128260; Unit converter (cent, sq ft, guntha &hellip;)</button></div>';
+  h+='<div class="card"><h2>GPS</h2><label>Averaging time per corner</label><select id="sDur">'+opt([15,30,45,60,90],st.dur,function(v){return v+' seconds'})+'</select>';
+  h+='<label>Ignore GPS readings worse than</label><select id="sAcc">'+opt([8,12,20,30,50],st.maxAcc,function(v){return'±'+fl(v,0)})+'</select></div>';
+  h+='<div class="tgrp" style="margin:18px 2px 8px">Help</div>';
+  h+='<details class="card help"><summary>How accurate is this?</summary><div class="small">Phone GPS alone is usually off by about 1 to 5 m in the open, and worse under trees or next to buildings. The error in the area depends on plot size:</div><ul class="tips small"><li><b>Acres:</b> usually around 1% or better. Fine for estimates.</li><li><b>10 to 50 cent:</b> a few percent. Rough.</li><li><b>1 to 10 cent:</b> error is too big. Use tape or a laser distance meter.</li></ul><div class="small" style="margin-top:8px">This is not centimetre accuracy and not a legal survey. For that you need an RTK GNSS receiver or a licensed surveyor.</div><div class="small" style="margin-top:8px"><b>Sloping land:</b> the main number is the flat map (horizontal) area. The app also estimates the slope from GPS height. A web app cannot read the iPhone barometer or LiDAR, so small slopes are not detected.</div></details>';
+  h+='<details class="card help"><summary>Tips for best results</summary><ul class="tips small"><li>Stand in the open, away from trees, walls and vehicles.</li><li>Wait until the GPS chip at the top shows green or amber before you capture.</li><li>Take all corners in one session, within about 15 minutes. Common GPS errors then cancel out in the area.</li><li>Take corners in order around the plot (clockwise or anticlockwise).</li><li>Keep the phone steady and the screen on. The app asks the phone to stay awake.</li><li>Measure again on another day or time of day and compare. If the two areas differ, trust neither fully.</li></ul></details>';
+  h+='<details class="card help"><summary>After you measure: What next?</summary><ul class="tips small"><li>When the area is ready, Home shows <b>What next?</b>. The Map tab has the same buttons under <b>Tools</b>.</li><li><b>Edit sides and points:</b> change a length or angle, nudge or add a point.</li><li><b>Fit to a wanted area:</b> say 94 cent and one point moves to match.</li><li><b>Split:</b> divide a plot into equal parts, by ratio, by cents, or with a road strip. Save the parts as separate plots.</li><li><b>Exclude an area:</b> mark a house or pond. Its area is taken out and the net area is shown.</li><li><b>Compare with record area:</b> type the area from the deed or Ente Bhoomi to see the difference in %.</li><li><b>Check with a tape:</b> check a GPS or map plot on the ground using a tape.</li><li><b>Tape lengths:</b> type the sides and the crosses (tapes straight across the plot). It tells you the fewest crosses needed (corners &minus; 3). A tape is far more exact than GPS for small plots.</li><li>On a saved plot you can make a <b>plan PDF</b>, a picture, or a <b>KML</b> file for Google Earth.</li></ul></details>';
+  h+='<details class="card help"><summary>Satellite map tips</summary><ul class="tips small"><li>The <b>Map</b> tab shows satellite pictures (Esri). Tap to add points, drag a point to correct it, and the distances, perimeter and area show at the top.</li><li><b>No GPS needed.</b> Points placed on the map give an approximate area. This is as good as the picture: sharp, recent and not hidden by trees. Boundaries under trees are guesses.</li><li>Use <b>Centre pin</b> for careful work: move the map until the cross is on the corner, then tap Add point.</li><li>When you drag a point, a round <b>magnifier</b> shows the spot above your finger.</li><li>Tap a point to add a <b>note or a photo</b>.</li><li>The pictures need internet. Measuring with GPS works without it.</li><li>Some villages have no sharp satellite picture at the highest zoom. The app then shows the best lower level it can find. You can also set the sharpest level in the map options (the three-line button).</li></ul></details>';
+  h+='<details class="card help"><summary>Install on iPhone</summary><ul class="tips small"><li>Open this page in Safari, tap Share, then <b>Add to Home Screen</b>.</li><li>Always open it from the home screen icon. Data saved in a Safari tab is not shared with the icon.</li><li><b>Do not delete the icon.</b> Deleting it erases the plots saved inside it. Back up first (Settings tab, Backup).</li><li>Allow Location when asked. In iPhone Settings, keep <b>Precise Location</b> ON for this app.</li></ul></details>';
   $('#app').innerHTML=h;
   acctBind();
   $('#sDur').onchange=function(){st.dur=+this.value;saveSettings()};

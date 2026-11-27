@@ -139,7 +139,7 @@ const mkDraft = xy => ({ name: 'Field test', place: '', notes: '', mode: 'corner
     await c2.addInitScript(() => { try { localStorage.setItem('lm.backupask.v1', String(Date.now())); } catch (e) {} });
     const p2 = await c2.newPage(); await p2.goto('http://localhost:8786/'); await p2.waitForTimeout(400);
     await p2.waitForFunction(() => /±/.test(document.querySelector('#gpsChip').textContent), null, { timeout: 8000 });
-    await p2.click('#bCap'); await p2.waitForTimeout(400);
+    await TH.startWay(p2, 'gps'); await p2.click('#bCap'); await p2.waitForTimeout(400);
     const r = { sheet: await p2.innerText('#sheet').catch(() => ''), open: await p2.evaluate(() => document.querySelector('#ov').classList.contains('on')), cap: !!(await p2.$('#capbar')), p2, c2 };
     return r;
   };

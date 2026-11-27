@@ -22,6 +22,13 @@ module.exports = {
     if (p) o.executablePath = p; // otherwise Playwright's own bundled Chromium
     return o;
   },
+  // Home > "Measure a new plot" > pick a way: 'gps' | 'map' | 'sk' | 'photo' | 'tape'
+  async startWay(page, m) {
+    await page.click('nav button[data-tab=measure]'); await page.waitForTimeout(100);
+    await page.click('#bNewPlot'); await page.waitForSelector('#sheet button[data-m]');
+    if (m === 'sk' || m === 'photo' || m === 'tape') { await page.click('#sheet button[data-m=plan]'); await page.waitForSelector('#sheet button[data-m=' + m + ']'); }
+    await page.click('#sheet button[data-m=' + m + ']');
+  },
   fixture: n => path.join(__dirname, 'fixtures', n),
   shot: n => { fs.mkdirSync(shots, { recursive: true }); return path.join(shots, n); },
   tmp: n => path.join(os.tmpdir(), n),

@@ -18,7 +18,7 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   await page.goto('http://localhost:8793/'); await page.waitForTimeout(400);
   const draft = () => page.evaluate(() => JSON.parse(localStorage.getItem('lm.draft.v1') || '{"corners":[]}'));
   const tap = async (i) => { await page.click('#tDia [data-h="' + i + '"]'); await page.waitForTimeout(60); };
-  await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bTape'); await page.click('#bTape'); await page.waitForSelector('#tN');
+  await TH.startWay(page, 'tape'); await page.waitForSelector('#tN');
   ok(await page.$('#tDiaS') !== null, 'a numbered picture of the corners is shown');
   await page.selectOption('#tN', { value: '8' }); await page.waitForSelector('#tHub');
   ok((await page.$$('#sheet input[data-s]')).length === 8 && (await page.$$('#sheet input[data-d]')).length === 5, '8 corners: 8 sides and 5 crosses (fan) to fill');
@@ -60,7 +60,7 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   await page.click('nav button[data-tab=plots]'); await page.waitForSelector('.plotitem'); await page.click('.plotitem'); await page.waitForTimeout(300);
   const det = await page.innerText('#app'); ok(/Crosses: 1→3/.test(det) && /3→5/.test(det) && /1→5/.test(det) && /5→7/.test(det) && /1→7/.test(det), 'saved plot lists the sketch crosses with real corner numbers');
   // 12 corners fit the sheet
-  await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bTape'); await page.click('#bTape'); await page.waitForSelector('#tN');
+  await TH.startWay(page, 'tape'); await page.waitForSelector('#tN');
   await page.selectOption('#tN', { value: '12' }); await page.waitForSelector('#tHub');
   ok((await page.$$('#sheet input[data-s]')).length === 12 && (await page.$$('#sheet input[data-d]')).length === 9, '12 corners: 12 sides and 9 crosses');
   ok(await page.$eval('#sheet', e => e.scrollWidth <= e.clientWidth + 1), '12 corners: nothing sticks out sideways on a phone');

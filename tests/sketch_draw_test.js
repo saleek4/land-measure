@@ -37,12 +37,12 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
 
   // ---- Home: three big ways to start, all visible without scrolling
   const vis = async (sel) => page.$eval(sel, e => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight - 60; }).catch(() => false);
-  ok((await Promise.all(['#bNewPlot', '#bPlanPhoto', '#bTape', '#bCap', '#bToMap', '#bSketch'].map(s => page.$(s)))).every(Boolean) && await vis('#bNewPlot'), 'Home: Plots, Plan, GPS, Measure and Sketch each have their New button (the first is on the first screen)');
+  ok(await vis('#bNewPlot') && await vis('.hero'), 'Home: one big "Measure a new plot" button on the first screen');
   ok(/Home/.test(await page.innerText('nav button[data-tab=measure]')), 'bottom tab is called Home');
-  ok(/How do you want to measure/.test(await page.innerText('.next')), 'Home tells you what to do first');
+  ok(/Measure a plot/.test(await page.innerText('.hero')), 'Home tells you what to do first');
 
   // ---- open the sketch
-  await page.click('#bSketch'); await page.waitForSelector('#skSvg');
+  await TH.startWay(page, 'sk'); await page.waitForSelector('#skSvg');
   ok(/Step 1/.test(await page.innerText('#skPanel')), 'blank sketch says what to do first (Step 1: tap the corners)');
   ok((await page.$eval('#skUn', e => e.disabled)) && (await page.$eval('#skRe', e => e.disabled)), 'Undo and Redo are off on a blank sketch');
 
@@ -169,10 +169,10 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   ok(pl.tape && pl.tape.sk && pl.tape.sk.pts.length === 8, 'the saved plot keeps its sketch');
 
   // ---- test 2: a four-corner plot drawn the other way round, one cross, start over from Home
-  await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bSketch');
+  await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bNewPlot');
   await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('lm.draft.v1')); d.sk = null; d.corners = []; d.tape = null; localStorage.setItem('lm.draft.v1', JSON.stringify(d)); });
-  await page.reload(); await page.waitForSelector('#bSketch');
-  await page.click('#bSketch'); await page.waitForSelector('#skSvg');
+  await page.reload(); await page.waitForSelector('#bNewPlot');
+  await TH.startWay(page, 'sk'); await page.waitForSelector('#skSvg');
   ok(await nPts() === 0, 'a new draft starts with a blank sketch');
   const quad = [[0, 0], [30, 0], [34, 20], [-4, 24]];   // real (m), counter-clockwise
   const qd = quad.map(p => [90 + p[0] * 6, 380 - p[1] * 9]);

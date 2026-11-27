@@ -15,7 +15,7 @@ const sides = pent.map((p, i) => D(p, pent[(i + 1) % 5]));
   await page.goto('http://localhost:8783/'); await page.waitForTimeout(400);
   const draft = () => page.evaluate(() => JSON.parse(localStorage.getItem('lm.draft.v1') || '{"corners":[]}'));
   const labels = async () => (await page.$$eval('#sheet input[data-d]', els => els.map(e => e.previousElementSibling.textContent.replace(/\s+/g, ' ').trim())));
-  await page.click('#bTape'); await page.waitForSelector('#tN');
+  await TH.startWay(page, 'tape'); await page.waitForSelector('#tN');
   await page.selectOption('#tN', { value: '5' }); await page.waitForSelector('#tHub');
   ok(/only 2 needed for 5 corners/.test(await page.innerText('#sheet')), 'sheet says only 2 crosses are needed for 5 corners');
   ok(JSON.stringify(await labels()) === JSON.stringify(['1 → 3', '1 → 4']), 'crosses from corner 1: ' + JSON.stringify(await labels()));
@@ -63,7 +63,7 @@ const sides = pent.map((p, i) => D(p, pent[(i + 1) % 5]));
   await page.click('nav button[data-tab=plots]'); await page.waitForSelector('.plotitem'); await page.click('.plotitem'); await page.waitForTimeout(300);
   const det = await page.innerText('#app'); ok(/Crosses: 4→1/.test(det) && /4→2/.test(det), 'saved plot lists the crosses with real corner numbers');
   // 3 corners: no crosses at all
-  await page.click('nav button[data-tab=measure]'); await page.waitForSelector('#bTape'); await page.click('#bTape'); await page.waitForSelector('#tN'); await page.selectOption('#tN', { value: '3' }); await page.waitForTimeout(200);
+  await TH.startWay(page, 'tape'); await page.waitForSelector('#tN'); await page.selectOption('#tN', { value: '3' }); await page.waitForTimeout(200);
   ok(!(await page.$('#tHub')) && !/Crosses/.test(await page.innerText('#sheet')), 'a triangle shows no crosses');
   ok(errs.length === 0, 'no JS errors ' + errs.join('|'));
   await b.close(); srv.close();
