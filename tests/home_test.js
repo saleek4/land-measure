@@ -74,6 +74,7 @@ const plots = [mk('a1', 'Sketch plot', 'tape', true), mk('b22', 'Road side', 'gp
   const d = { ...base, name: 'Half done', corners: cor('gps') };
   await setDraft(d);
   ok(await page.$('#bNewPlot') !== null && await page.$('#bSave') !== null && await page.$('#fName') !== null && (await page.inputValue('#fName')) === 'Half done', 'a plot in progress shows Save plot, its name and a New plot button');
+  ok(/not saved yet/.test(await page.innerText('.ph')), 'the header says the plot is not saved yet');
   const ids = ['#aEdit', '#aFit', '#aMove', '#aSplit', '#aHole', '#bRec', '#bField'];
   ok((await Promise.all(ids.map(s => page.$(s)))).every(Boolean), 'What next? has Edit, Fit, Move, Split, Exclude, Compare with record, Check with a tape');
   const grp = await page.$$eval('#app .tgrp', a => a.map(e => e.textContent.trim()));

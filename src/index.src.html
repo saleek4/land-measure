@@ -2881,7 +2881,7 @@ function renderMeasure(){
   }else{
     // ---- a plot in progress: how it is going, then the result and what to do next
     var wayName={gps:'GPS on the land',map:'Satellite map',plan:'Plan or tape lengths'}[way];
-    var top='<div class="ph"><div><b>Plot in progress</b><div class="mut small">'+wayName+(n?' &middot; '+n+' point'+(n===1?'':'s'):'')+'</div></div>'+(busy?'':(n||sk0?'<button id="bNewPlot">New plot</button>':'<button id="bWayX">Cancel</button>'))+'</div>';
+    var top='<div class="ph"><div><b>Plot in progress</b><div class="mut small">'+wayName+(n?' &middot; '+n+' point'+(n===1?'':'s'):'')+(n||sk0?' &middot; <b>not saved yet</b>':'')+'</div></div>'+(busy?'':(n||sk0?'<button id="bNewPlot">New plot</button>':'<button id="bWayX">Cancel</button>'))+'</div>';
     var nxt=busy?'':an&&way==='gps'?'<div class="next">&#128073; '+n+' corners taken. Stand on the next corner and press <b>Capture corner '+(n+1)+'</b>. When all corners are done, press <b>Save plot</b>.</div>'
       :an?'<div class="next">&#9989; <b>Area is ready.</b> Save the plot, or fix it with the buttons below.</div>'
       :way==='gps'&&!n?'<div class="next">&#128073; Stand on the first corner and press <b>Capture corner 1</b>.</div>'

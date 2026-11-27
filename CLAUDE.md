@@ -32,7 +32,7 @@ node tests/run_all.js      # rebuilds, then runs every test and prints a summary
 node tests/run_all.js edit # only the test files whose name contains "edit"
 npm run serve              # http://localhost:8080 (needs nothing but node)
 ```
-Release routine: edit `src/index.src.html` -> `node build.js` -> run the tests -> bump `CACHE` in `sw.js` (currently `land-measure-v27`; keep the `v<number>` pattern) -> commit `src/`, `index.html`, `sw.js` together -> push to `main` (Pages publishes in about a minute). Update README when a feature is added.
+Release routine: edit `src/index.src.html` -> `node build.js` -> run the tests -> bump `CACHE` in `sw.js` (currently `land-measure-v28`; keep the `v<number>` pattern) -> commit `src/`, `index.html`, `sw.js` together -> push to `main` (Pages publishes in about a minute). Update README when a feature is added.
 
 Tests: Playwright + Chrome. `tests/helpers.js` finds Playwright (`npm install` or a global copy) and Chrome (`CHROME_PATH` env, common locations, else Playwright's own Chromium). Browser tests mock the map tiles, Nominatim and Firebase, so they need no internet. Screenshots go to `tests/shots/` (git-ignored). Python 3 with Pillow and poppler (`pdfinfo`, `pdftoppm`) are used by a few tests. In Playwright use `selectOption({ value: 'x' })`; a bare string matches label or value.
 
