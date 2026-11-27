@@ -472,6 +472,21 @@ function skShape(P,S){
   var n=S.length,sx=0,sy=0,i;for(i=0;i<n;i++){sx+=S[i].x;sy+=S[i].y}sx/=n;sy/=n;
   var a=fpAlign(P,S.map(function(p){return{x:p.x-sx,y:p.y-sy}}));return{P:a.P,flip:a.flip,turn:a.turn};
 }
+// sketch: a length that was not taped can be estimated from the drawing. items: [{len: typed length, d: its distance in the drawing}].
+// scale k = median of len / d (length per drawing unit); spread = half the range of len / d, as a fraction of k (0 with one item)
+function skScale(items){
+  var r=items.filter(function(x){return x&&x.len>0&&x.d>0}).map(function(x){return x.len/x.d}).sort(function(a,b){return a-b});
+  if(!r.length)return null;
+  var m=r.length%2?r[(r.length-1)/2]:(r[r.length/2-1]+r[r.length/2])/2;
+  return{k:m,n:r.length,spread:r.length>1?(r[r.length-1]-r[0])/2/m:0};
+}
+// how far an estimated length can be off, as a fraction: at least 3% (6% when only one length is typed to compare with)
+function skEstRel(sc){return sc.n>1?Math.max(0.03,sc.spread):0.06}
+// corner error acc (metres) that makes analyze() report an area error of sigA (square metres) for the polygon P
+function estAcc(P,sigA){
+  var n=P.length,g=0;for(var k=0;k<n;k++){var p=P[(k+n-1)%n],q=P[(k+1)%n];g+=((q.x-p.x)*(q.x-p.x)+(q.y-p.y)*(q.y-p.y))/4}
+  return g>0&&sigA>0?1.5*sigA/Math.sqrt(g):0;
+}
 // field plan: one extra cross (not among the n-3 from corner h) to catch a slip of the tape: the longest one that stays inside the rough shape R
 function fpCheckPair(R,h){
   var n=R.length;if(n<4)return null;
@@ -1013,6 +1028,7 @@ function resultHTML(an,mode,withSave,o){
   var how=an.meth==='tape'?'Worked out from the tape lengths you entered. The error shown assumes about 3 cm + 0.2% per length. A sagging or slanting tape adds more.':an.meth==='map'?'Estimate from points traced on satellite imagery (no GPS). Trees, shadows and old pictures can hide the real boundary.':an.nmap?an.nmap+' of '+an.n+' points were placed on the satellite map. The rest come from GPS.':an.ntape?'Some points come from tape lengths, the rest from GPS or the map.':'Estimate from the GPS accuracy reported by the phone.';
   h+='<div class="mut small">'+esc(q.d.charAt(0).toUpperCase()+q.d.slice(1))+'. '+how+'</div>';
   if(an.cross)h+='<div class="warnbox">Boundary lines cross each other. Corners must be taken in order around the plot. Tap a corner to retake it.</div>';
+  if(o&&o.tape&&o.tape.est&&o.tape.est.n)h+='<div class="warnbox">'+o.tape.est.n+' length'+(o.tape.est.n===1?' was':'s were')+' estimated from the sketch, not taped, so this area is a close guess. Tape '+(o.tape.est.n===1?'it':'them')+' and fix the sketch to make it exact.</div>';
   if(o&&o.rec)h+=recHTML(an,o.rec);
   h+='<table>'+oth.map(function(x){return'<tr><td>'+UNIT[x].l+'</td><td>'+fa(an.net,x)+'</td></tr>'}).join('');
   h+='<tr><td>Hectare · Are · sq m</td><td>'+k.ha+' Ha '+k.are+' Ar '+k.m2.toFixed(1)+' m²</td></tr>';
@@ -1738,7 +1754,7 @@ function mapBottom(){
   }else if(sp){
     h=splitCardHTML();
   }else if(M.mv){
-    h='<div class="mcard"><b>Move plot</b><div class="tiny">Drag on the map to move the whole plot. Use two fingers to move the map.</div><div class="row" style="margin-top:8px"><button data-mv="W">&#9664;</button><button data-mv="N">&#9650;</button><button data-mv="S">&#9660;</button><button data-mv="E">&#9654;</button></div>'+chipsHTML('mvSt',lenSteps().map(function(x){return x.l}),Math.min(MS.estep==null?1:MS.estep,3),'Arrow step')+'<div class="row" style="margin-top:8px"><button id="mvL">&#10226; 5°</button><button id="mvl">&#10226; 1°</button><button id="mvr">1° &#10227;</button><button id="mvR">5° &#10227;</button></div><div class="row" style="margin-top:8px"><button class="pri" id="mvDone">Done</button></div></div>';
+    h='<div class="mcard"><b>Move plot</b><div class="tiny">Drag on the map to move the whole plot. Use two fingers to move the map. Plot is far away? Move the map to your land and tap the button below.</div><div class="row" style="margin-top:8px"><button data-mv="W">&#9664;</button><button data-mv="N">&#9650;</button><button data-mv="S">&#9660;</button><button data-mv="E">&#9654;</button></div>'+chipsHTML('mvSt',lenSteps().map(function(x){return x.l}),Math.min(MS.estep==null?1:MS.estep,3),'Arrow step')+'<div class="row" style="margin-top:8px"><button id="mvL">&#10226; 5°</button><button id="mvl">&#10226; 1°</button><button id="mvr">1° &#10227;</button><button id="mvR">5° &#10227;</button></div><div class="row" style="margin-top:8px"><button id="mvC">&#127919; Put plot in the middle of the map</button></div><div class="row" style="margin-top:8px"><button class="pri" id="mvDone">Done</button></div></div>';
   }else if(M.edit&&!M.view&&M.ring<0&&MS.add==='edit'&&(h=editCardHTML())){
     // edit card rendered by editCardHTML
   }else if(M.ring>=0&&!M.view){
@@ -1773,6 +1789,7 @@ function mapBottom(){
   if(q('#hUndo'))q('#hUndo').onclick=function(){var b=JSON.stringify(A);A.pop();rdoPush(A,b,'pop',null);M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();gcPhotos()};
   if(q('#hRedo'))q('#hRedo').onclick=mapRedo;
   if(q('#hDone'))q('#hDone').onclick=endHole;
+  if(q('#mvC'))q('#mvC').onclick=centrePlot;
   if(q('#mvDone'))q('#mvDone').onclick=function(){M.mv=false;M.lastPanel='';mapBottom();scheduleDraw()};
   el.querySelectorAll('[data-mv]').forEach(function(b){b.onclick=function(){var d=lenSteps()[Math.min(MS.estep==null?1:MS.estep,3)].m,k=b.dataset.mv;shiftMetres(k==='E'?d:k==='W'?-d:0,k==='N'?d:k==='S'?-d:0)}});
   if(q('#mvSt'))q('#mvSt').querySelectorAll('button').forEach(function(b){b.onclick=function(){MS.estep=+b.dataset.s;saveView();mapBottom()}});
@@ -1935,6 +1952,14 @@ function rotateAll(deg){
   saveDraft();scheduleDraw();
 }
 
+function centrePlot(){
+  var o=S.draft,C=o.corners;if(!C.length)return;
+  var a=1e9,b=-1e9,c=1e9,e=-1e9;C.forEach(function(p){a=Math.min(a,p.lat);b=Math.max(b,p.lat);c=Math.min(c,p.lon);e=Math.max(e,p.lon)});
+  var lat0=(a+b)/2,lon0=(c+e)/2;
+  allRings(o).forEach(function(r){var Q=toXY(r,lat0,lon0);r.forEach(function(p,i){var g=fromXY(Q[i].x,Q[i].y,MS.lat,MS.lon);p.lat=g.lat;p.lon=g.lon})});
+  saveDraft();M.lastPanel='';scheduleDraw();toast('Plot moved to the middle of the map');
+}
+
 // ---------- record area ----------
 function recSheet(target,after){
   var r=target.rec,u=(r&&r.u)||S.settings.unit,v=r?UNIT[u].f(r.a):'';
@@ -2066,14 +2091,26 @@ function tapeSheet(){
   drawIn();
 }
 function placeTapeShape(make){
-  var org=(S.tab==='map'||!(S.gps.lat!=null&&Date.now()-S.gps.rx<30000))?{lat:MS.lat,lon:MS.lon}:{lat:S.gps.lat,lon:S.gps.lon};
-  var go=function(){
+  // Where does the plot go? On the Map tab: the middle of the map. Elsewhere: if GPS is fresh we ask, because the plot may be of another place (never guess the user's GPS spot).
+  var fresh=S.gps.lat!=null&&Date.now()-S.gps.rx<30000;
+  var go=function(org,where){
     var d=S.draft,m=make(org);d.corners=m.corners;d.holes=[];d.mode='corners';d.fp=null;d.tape=m.tape;
     saveDraft();closeSheet();if(typeof SK!=='undefined'&&SK.open){SK.open=false;skStore();$('#skv').style.display='none';document.body.style.overflow=''}
     M.ring=-1;M.split=null;M.view=null;M.refit=true;S.tab='map';render();gcPhotos();
-    toast('Plot placed in the middle of the map. Use Tools → Move or turn the plot to put it on the land');
+    if(where==='gps')toast('Plot placed where you stand. If the land is somewhere else: Tools → Move or turn → Put plot in the middle of the map');
+    else if(where==='else'){toolMove();toast('Plot is on the map. Move the map to your land, then tap Put plot in the middle of the map')}
+    else toast('Plot placed in the middle of the map. Use Tools → Move or turn the plot to put it on the land');
   };
-  if(S.draft.corners.length)choose('Replace the current points?','The points of the current plot will be replaced by the plot drawn from the tape lengths.',[{label:'Replace',val:true,cls:'danger'},{label:'Cancel',val:false}]).then(function(ok){if(ok)go()});else go();
+  var start=function(org,where){
+    if(S.draft.corners.length)choose('Replace the current points?','The points of the current plot will be replaced by the plot drawn from the tape lengths.',[{label:'Replace',val:true,cls:'danger'},{label:'Cancel',val:false}]).then(function(ok){if(ok)go(org,where)});
+    else go(org,where);
+  };
+  if(S.tab!=='map'&&fresh)choose('Where is this plot?','You are standing at a GPS spot now. Is the plot on the land where you stand, or is it another place?',[{label:'Here, where I stand',val:'gps',cls:'pri'},{label:'Another place',val:'else'},{label:'Cancel',val:false}]).then(function(v){
+    if(!v)return;
+    if(v==='gps'&&S.gps.lat!=null)start({lat:S.gps.lat,lon:S.gps.lon},'gps');
+    else start({lat:MS.lat,lon:MS.lon},'else');
+  });
+  else start({lat:MS.lat,lon:MS.lon},'map');
 }
 function tapePlace(){
   var r=tapeCalc();if(!r.ok)return;
@@ -2086,7 +2123,7 @@ function tapePlace(){
 }
 
 // ---------- sketch: draw the plot like on paper, then type every tape length on it ----------
-var SKW=360,SKH=520,SK={open:false,wired:false,mode:'draw',pts:[],closed:false,cr:[],L:{},nid:1,u:'m',sel:null,pend:-1,un:[],re:[],dn:null,res:null,v:{z:1,cx:180,cy:260},vr:{z:1,cx:180,cy:260},ptr:{},gest:false,g:null,bg:null,bgUrl:null};
+var SKW=360,SKH=520,SK={open:false,wired:false,mode:'draw',pts:[],closed:false,cr:[],L:{},est:{},nid:1,u:'m',sel:null,pend:-1,un:[],re:[],dn:null,res:null,v:{z:1,cx:180,cy:260},vr:{z:1,cx:180,cy:260},ptr:{},gest:false,g:null,bg:null,bgUrl:null};
 function skKey(a,b){return Math.min(a,b)+'-'+Math.max(a,b)}
 function skIdx(id){for(var i=0;i<SK.pts.length;i++)if(SK.pts[i].id===id)return i;return-1}
 function skSideKey(i){var n=SK.pts.length;return skKey(SK.pts[i].id,SK.pts[(i+1)%n].id)}
@@ -2096,19 +2133,22 @@ function skSame(a,b){return!!(a&&b&&a.t===b.t&&a.i===b.i&&a.k===b.k)}
 function skClean(){
   var n=SK.pts.length,seen={};
   SK.cr=SK.cr.filter(function(c){var a=skIdx(c[0]),b=skIdx(c[1]);if(a<0||b<0||a===b)return false;var dd=Math.abs(a-b);if(dd===1||dd===n-1)return false;var k=skCrKey(c);if(seen[k])return false;seen[k]=1;return true});
+  // an estimate flag only stays while its side or cross exists and still has a length
+  var live={};skItems().forEach(function(it){live[skLenKey(it)]=1});
+  Object.keys(SK.est||{}).forEach(function(k){if(!live[k]||!skNum(SK.L[k]))delete SK.est[k]});
 }
-function skData(){return{pts:SK.pts.map(function(p){return[+p.x.toFixed(1),+p.y.toFixed(1),p.id]}),closed:SK.closed,cr:clone(SK.cr),L:clone(SK.L),nid:SK.nid,u:SK.u,bg:SK.bg?clone(SK.bg):null}}
+function skData(){return{pts:SK.pts.map(function(p){return[+p.x.toFixed(1),+p.y.toFixed(1),p.id]}),closed:SK.closed,cr:clone(SK.cr),L:clone(SK.L),est:Object.keys(SK.est||{}),nid:SK.nid,u:SK.u,bg:SK.bg?clone(SK.bg):null}}
 function skStore(){S.draft.sk=skData();saveDraft()}
 function skLoad(){
   var d=S.draft,s=d.sk||(d.tape&&d.tape.sk)||null,t=d.tape;
   SK.sel=null;SK.pend=-1;SK.un=[];SK.re=[];SK.dn=null;SK.bg=(s&&s.bg)?clone(s.bg):null;
-  if(s){SK.pts=s.pts.map(function(p){return{x:p[0],y:p[1],id:p[2]}});SK.closed=!!s.closed;SK.cr=clone(s.cr||[]);SK.L=clone(s.L||{});SK.nid=s.nid||SK.pts.length+1;SK.u=s.u||'m'}
+  if(s){SK.pts=s.pts.map(function(p){return{x:p[0],y:p[1],id:p[2]}});SK.closed=!!s.closed;SK.cr=clone(s.cr||[]);SK.L=clone(s.L||{});SK.est={};(s.est||[]).forEach(function(k){SK.est[k]=1});SK.nid=s.nid||SK.pts.length+1;SK.u=s.u||'m'}
   else if(t&&t.sides&&t.sides.length>=3){
-    var n=t.sides.length,i;SK.pts=[];SK.L={};SK.cr=[];SK.nid=n+1;SK.closed=true;SK.u=t.u||'m';
+    var n=t.sides.length,i;SK.pts=[];SK.L={};SK.est={};SK.cr=[];SK.nid=n+1;SK.closed=true;SK.u=t.u||'m';
     for(i=0;i<n;i++){var a=-Math.PI/2+2*Math.PI*i/n;SK.pts.push({id:i+1,x:180+125*Math.cos(a),y:260+190*Math.sin(a)})}
     for(i=0;i<n;i++)SK.L[skKey(i+1,(i+1)%n+1)]=String(t.sides[i]||'');
     if(n>=4)(t.cr||tapeCross(n,(t.hub||0)%n)).forEach(function(c,k){SK.cr.push([c[0]+1,c[1]+1]);SK.L[skKey(c[0]+1,c[1]+1)]=String((t.diags&&t.diags[k])||'')});
-  }else{SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.nid=1;SK.u=inFt()?'ft':'m'}
+  }else{SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.est={};SK.nid=1;SK.u=inFt()?'ft':'m'}
   skClean();SK.mode=SK.closed?'len':'draw';skBgLoad();
 }
 function skSnap(){return JSON.stringify({p:SK.pts,c:SK.closed,r:SK.cr})}
@@ -2136,10 +2176,7 @@ function skIsChk(it){return!!(SK.res&&SK.res.chks&&SK.res.chks.some(function(c){
 function skSolve(){
   var n=SK.pts.length;
   if(!SK.closed||n<3)return{ok:false,err:'Draw the plot first: tap the corners, then press Close shape.',stage:'draw'};
-  var cr=SK.cr.map(function(c){return[skIdx(c[0]),skIdx(c[1])]}),T={n:n,u:SK.u,hub:0,sides:[],dm:{},cr:n>=4?cr:null},i;
-  for(i=0;i<n;i++)T.sides.push(SK.L[skSideKey(i)]||'');
-  if(n>=4)cr.forEach(function(p,k){T.dm[tkey(p)]=SK.L[skCrKey(SK.cr[k])]||''});
-  var r=tapeCalc(T);
+  var r=tapeCalc(skBuildT());
   if(!r.ok){var m=skFirstMissing();
     if(r.tri){var ch=skTriItems(r.tri),vs=ch.map(function(it){return parseFloat(String(skLen(it)).replace(',','.'))});
       if(ch.length===3&&vs.every(function(x){return x>0})){
@@ -2150,7 +2187,42 @@ function skSolve(){
     else if(m&&(/^Type /.test(r.err||''))){r.err=skLabel(m)+' has no length yet. Tape it and type it here.';r.stage='len';r.miss=m}
     else r.stage='len';
     return r}
-  var a=skShape(r.P,SK.pts.map(function(p){return{x:p.x,y:-p.y}}));r.Q=a.P;return r;
+  var a=skShape(r.P,SK.pts.map(function(p){return{x:p.x,y:-p.y}}));r.Q=a.P;
+  var ek=skEstKeys();
+  if(ek.length){
+    var sc=skScaleFor(null),rel=sc?skEstRel(sc):0.06,sq=0;
+    ek.forEach(function(k){var v=parseFloat(String(SK.L[k]).replace(',','.')),da=0;
+      [1+rel,1-rel].forEach(function(f){var o={};o[k]=v*f;var r2=tapeCalc(skBuildT(o));if(r2.ok)da=Math.max(da,Math.abs(r2.area-r.area))});
+      sq+=da*da});
+    r.estN=ek.length;r.estSig=Math.sqrt(sq);r.sig=Math.sqrt(r.sig*r.sig+sq);
+  }
+  return r;
+}
+// the tape state for the sketch; over = {key: length} replaces some typed lengths (used to see how much an estimate can change the area)
+function skBuildT(over){
+  var n=SK.pts.length,cr=SK.cr.map(function(c){return[skIdx(c[0]),skIdx(c[1])]}),T={n:n,u:SK.u,hub:0,sides:[],dm:{},cr:n>=4?cr:null},i;over=over||{};
+  var g=function(k){return k in over?String(over[k]):(SK.L[k]||'')};
+  for(i=0;i<n;i++)T.sides.push(g(skSideKey(i)));
+  if(n>=4)cr.forEach(function(p,k){T.dm[tkey(p)]=g(skCrKey(SK.cr[k]))});
+  return T;
+}
+// lengths that were estimated from the drawing (keys), and the scale of the drawing worked out from the lengths that were typed
+function skEstKeys(){var ks=[];skItems().forEach(function(it){var k=skLenKey(it);if(SK.est[k]&&skNum(SK.L[k]))ks.push(k)});return ks}
+function skScaleFor(skip){
+  var a=[];
+  skItems().forEach(function(it){
+    if(skip&&skSame(it,skip))return;var k=skLenKey(it);if(SK.est[k])return;
+    var v=parseFloat(String(SK.L[k]||'').replace(',','.'));if(!(v>0))return;
+    var e=skEnds(it);if(!e[0]||!e[1])return;a.push({len:v,d:Math.hypot(e[0].x-e[1].x,e[0].y-e[1].y)})});
+  return skScale(a);
+}
+function skEstimate(){
+  var it=SK.sel;if(!it||(it.t!=='s'&&it.t!=='c'))return;
+  var sc=skScaleFor(it);if(!sc){toast('Type another length first. An estimate needs one to compare with');return}
+  if(sc.n>1&&sc.spread>0.2){toast('The drawing does not match your typed lengths well (they differ by more than 20%), so an estimate would be a poor guess. Tape this one.');return}
+  var e=skEnds(it),k=skLenKey(it);
+  SK.L[k]=String(+(sc.k*Math.hypot(e[0].x-e[1].x,e[0].y-e[1].y)).toFixed(1));SK.est[k]=1;
+  skStore();skRender();
 }
 // ----- drawing
 // view: SK.v (the drawing) and SK.vr (the result) = {z zoom, cx cy = the world point at the middle of the canvas}. Sizes on screen stay the same when zoomed.
@@ -2207,9 +2279,10 @@ function skHitItem(p,crossFirst){
   skItems().forEach(function(it){var e=skEnds(it),s=skSegD(p,e[0],e[1]),d=s.d-(it.t==='c'&&crossFirst?4:0);if(d<lim&&(!best||d<best.d))best={it:it,d:d,x:s.x,y:s.y}});
   return best;
 }
-function skPill(x,y,txt,on,empty,col){
+function skPill(x,y,txt,on,empty,col,est){
+  if(est&&!empty)txt='~'+txt;
   var w=Math.max(30,String(txt).length*7.6+14);
-  return'<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-11).toFixed(1)+'" width="'+w.toFixed(1)+'" height="22" rx="11" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="'+(on?'var(--acc)':empty?'var(--bad)':col)+'" stroke-width="1.6"'+(empty&&!on?' stroke-dasharray="3 2"':'')+'/><text x="'+x.toFixed(1)+'" y="'+(y+4.3).toFixed(1)+'" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(on?'var(--accInk)':empty?'var(--bad)':'var(--ink)')+'">'+esc(txt)+'</text>';
+  return'<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-11).toFixed(1)+'" width="'+w.toFixed(1)+'" height="22" rx="11" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="'+(on?'var(--acc)':empty?'var(--bad)':est?'var(--warn)':col)+'" stroke-width="1.6"'+((empty||est)&&!on?' stroke-dasharray="3 2"':'')+'/><text x="'+x.toFixed(1)+'" y="'+(y+4.3).toFixed(1)+'" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(on?'var(--accInk)':empty?'var(--bad)':'var(--ink)')+'">'+esc(txt)+'</text>';
 }
 function skCorner(x,y,i,on,ring){
   return'<circle class="skc" data-c="'+i+'" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="14" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="'+(ring?'var(--warn)':'var(--acc)')+'" stroke-width="'+(ring?4:2.5)+'"/><text x="'+x.toFixed(1)+'" y="'+(y+4.8).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="800" fill="'+(on?'var(--accInk)':'var(--ink)')+'">'+(i+1)+'</text>';
@@ -2246,8 +2319,8 @@ function skSketchSvg(){
   if(SK.closed&&SK.mode!=='move'){
     var ar=0;for(i=0;i<n;i++){var q=Q[i],r2=Q[(i+1)%n];ar+=q.x*r2.y-r2.x*q.y}
     for(i=0;i<n;i++){var a2=Q[i],b2=Q[(i+1)%n],dx=b2.x-a2.x,dy=b2.y-a2.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l,it={t:'s',i:i},val=SK.L[skSideKey(i)]||'';
-      g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,val||'?',skSame(SK.sel,it),!skNum(val)||skIsChk(it),'var(--mut)')}
-    SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var val=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,val||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(val)||skIsChk({t:'c',k:k}),'var(--warn)')})}
+      g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,val||'?',skSame(SK.sel,it),!skNum(val)||skIsChk(it),'var(--mut)',!!SK.est[skSideKey(i)])}
+    SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var val=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,val||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(val)||skIsChk({t:'c',k:k}),'var(--warn)',!!SK.est[skCrKey(c)])})}
   for(i=0;i<n;i++)g+=skCorner(Q[i].x,Q[i].y,i,SK.sel&&SK.sel.t==='p'&&SK.sel.i===i,SK.pend===i);
   if(SK.closed&&SK.mode==='cross'&&SK.pend>=0){var pr=skPartners(SK.pend);for(i=0;i<n;i++)if(pr[i])g+='<circle class="skr" cx="'+Q[i].x.toFixed(1)+'" cy="'+Q[i].y.toFixed(1)+'" r="22" fill="none" stroke="var(--bad)" stroke-width="3.5"/>'}
   if(!SK.closed&&n>=3&&SK.mode==='draw')g+='<circle cx="'+Q[0].x.toFixed(1)+'" cy="'+Q[0].y.toFixed(1)+'" r="21" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-dasharray="4 4"/>';
@@ -2261,8 +2334,8 @@ function skResSvg(r){
   g+='<polygon points="'+T.map(skXY).join(' ')+'" fill="var(--fill)" stroke="var(--acc)" stroke-width="3" stroke-linejoin="round"/>';
   SK.cr.forEach(function(c){var a=T[skIdx(c[0])],b=T[skIdx(c[1])];g+=skLine(a,b,'var(--warn)',2,'7 5')});
   var ar=0;for(i=0;i<n;i++){var q=T[i],r2=T[(i+1)%n];ar+=q.x*r2.y-r2.x*q.y}
-  for(i=0;i<n;i++){var a=T[i],b=T[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l;g+=skPill((a.x+b.x)/2+nx*18,(a.y+b.y)/2+ny*18,SK.L[skSideKey(i)]||'',false,false,'var(--mut)')}
-  SK.cr.forEach(function(c){var a=T[skIdx(c[0])],b=T[skIdx(c[1])];g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,SK.L[skCrKey(c)]||'',false,false,'var(--warn)')});
+  for(i=0;i<n;i++){var a=T[i],b=T[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l;g+=skPill((a.x+b.x)/2+nx*18,(a.y+b.y)/2+ny*18,SK.L[skSideKey(i)]||'',false,false,'var(--mut)',!!SK.est[skSideKey(i)])}
+  SK.cr.forEach(function(c){var a=T[skIdx(c[0])],b=T[skIdx(c[1])];g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,SK.L[skCrKey(c)]||'',false,false,'var(--warn)',!!SK.est[skCrKey(c)])});
   for(i=0;i<n;i++)g+=skCorner(T[i].x,T[i].y,i,false,false);
   g+='<g transform="translate('+(SKW-30)+',30)"><path d="M0 14V-12M-7 -4L0 -14L7 -4" fill="none" stroke="var(--mut)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><text y="30" text-anchor="middle" font-size="12" font-weight="800" fill="var(--mut)">N</text></g>';
   return g;
@@ -2271,7 +2344,7 @@ function skDrawSvg(){SK.res=skSolve();skPaint()}
 function skStrip(){
   var el=$('#skStrip');if(!el)return;var n=SK.pts.length,r=SK.res,u=S.settings.unit,h;
   if(!SK.closed)h=n?n+' corner'+(n===1?'':'s')+' drawn':'Draw the plot like on your paper sketch';
-  else if(r&&r.ok)h=SK.mode==='res'?'All lengths typed. This is your plot.':'<b style="color:var(--ink);font-size:16px">'+fa(r.area,u)+' '+UNIT[u].l+'</b> · about ±'+fa(r.sig,u)+' '+UNIT[u].l;
+  else if(r&&r.ok)h=SK.mode==='res'?(r.estN?'Plot ready. '+r.estN+' length'+(r.estN===1?' is':'s are')+' estimated, not taped.':'All lengths typed. This is your plot.'):'<b style="color:var(--ink);font-size:16px">'+fa(r.area,u)+' '+UNIT[u].l+'</b> · about ±'+fa(r.sig,u)+' '+UNIT[u].l;
   else if(r&&r.chk)h='<b style="color:var(--bad)">⚠ Corners '+r.tri.map(function(x){return x+1}).sort(function(a,b){return a-b}).join(', ')+': lengths do not fit</b>';
   else{var its=skItems(),s=its.filter(function(it){return it.t==='s'&&skNum(skLen(it))}).length,c=its.filter(function(it){return it.t==='c'&&skNum(skLen(it))}).length;
     h='Sides '+s+' of '+n+(n>=4?' · Crosses '+c+' of '+Math.max(n-3,SK.cr.length):'')+' typed'}
@@ -2280,6 +2353,12 @@ function skStrip(){
 function skInHTML(it,more){
   return'<div class="skt"><b>'+skLabel(it)+'</b> <span class="mut small">· tape it, then type the length</span></div><div class="skin"><input id="skIn" inputmode="decimal" autocomplete="off" placeholder="length" value="'+esc(skLen(it))+'"><select id="skU"><option value="m"'+(SK.u==='m'?' selected':'')+'>m</option><option value="ft"'+(SK.u==='ft'?' selected':'')+'>ft</option></select>'+more+'</div>';
 }
+function skEstHTML(it){
+  var k=skLenKey(it);
+  if(SK.est[k])return'<div class="mut small" id="skEstNote" style="margin-top:6px">≈ Estimated from the drawing, not measured. Tape it and type the real length when you can.</div>';
+  if(skNum(skLen(it)))return'';
+  return skScaleFor(it)?'<div class="row" style="margin-top:6px"><button id="skEst">📐 Not taped? Estimate from the drawing</button></div>':'';
+}
 function skPanel(){
   var n=SK.pts.length,m=SK.mode,h='',r=SK.res,it=SK.sel;
   if(m==='draw'){
@@ -2287,7 +2366,7 @@ function skPanel(){
     if(!SK.closed)h+='<div class="row"><button class="pri" id="skCl"'+(n>=3?'':' disabled')+'>Close shape</button></div>';
     if(!n)h+='<div class="row" style="margin-top:6px"><button id="skPh">📷 Start from a photo of the plan</button></div>';
   }else if(m==='len'){
-    if(it&&(it.t==='s'||it.t==='c'))h+=skInHTML(it,'<button id="skNext" class="pri">Next ▶</button>')+'<div class="row" style="margin-top:6px"><button id="skPrev">◀ Back</button>'+(it.t==='c'?'<button id="skRm" class="danger">Remove cross</button>':'')+'</div>';
+    if(it&&(it.t==='s'||it.t==='c'))h+=skInHTML(it,'<button id="skNext" class="pri">Next ▶</button>')+skEstHTML(it)+'<div class="row" style="margin-top:6px"><button id="skPrev">◀ Back</button>'+(it.t==='c'?'<button id="skRm" class="danger">Remove cross</button>':'')+'</div>';
     else h+='<div class="skt"><b>Step 2.</b> Tap a side or a cross on the drawing to type its length. Or press Start.</div><div class="row"><button class="pri" id="skStart">Start with side 1</button></div>';
   }else if(m==='move'){
     if(it&&it.t==='p')h+='<div class="skt"><b>Corner '+(it.i+1)+'</b> selected. Drag it to move.</div><div class="row"><button id="skOne"'+(it.i?'':' disabled')+'>Make it corner 1</button><button id="skDel" class="danger">Delete this corner</button></div>';
@@ -2300,6 +2379,7 @@ function skPanel(){
   }else{
     if(r&&r.ok){var u=S.settings.unit;
       h+='<div class="skbig">'+fa(r.area,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small">'+fa(r.area,'sqm')+' sq m · perimeter '+fl(r.per,1)+' · typical error ±'+fa(r.sig,u)+' '+UNIT[u].l+'</div>'+(r.warn?'<div class="warnbox">'+esc(r.warn)+'</div>':'')
+        +(r.estN?'<div class="warnbox">'+r.estN+' length'+(r.estN===1?' is':'s are')+' estimated from the drawing, not taped. That adds about ±'+fa(r.estSig,u)+' '+UNIT[u].l+' to the error. Tape '+(r.estN===1?'it':'them')+' and type the real '+(r.estN===1?'length':'lengths')+' to make the area exact.</div>':'')
         +'<div class="row" style="margin-top:8px"><button class="pri" id="skPlace"'+(r.warn&&/cross|wraps/.test(r.warn)?' disabled':'')+'>Put on the map</button></div><div class="mut small" style="margin-top:4px">The top of the sketch becomes North.</div>';
     }else{
       h+='<div class="skt">'+esc((r&&r.err)||'')+'</div><div class="row"><button class="pri" id="skFix">'+(r&&r.stage==='cross'?'Go to Crosses':r&&r.stage==='draw'?'Go to Draw':r&&r.stage==='chk'?'Check these lengths':'Type the missing length')+'</button></div>';
@@ -2310,9 +2390,10 @@ function skPanel(){
   if(q('#skCl'))q('#skCl').onclick=skCloseShape;
   if(q('#skPh'))q('#skPh').onclick=skPhotoSheet;
   if(q('#skOne'))q('#skOne').onclick=function(){if(!SK.sel||SK.sel.t!=='p')return;var i=SK.sel.i;skPush();SK.pts=SK.pts.slice(i).concat(SK.pts.slice(0,i));SK.sel={t:'p',i:0};skAfter()};
-  if(q('#skIn')){q('#skIn').oninput=function(){if(SK.sel&&(SK.sel.t==='s'||SK.sel.t==='c')){SK.L[skLenKey(SK.sel)]=this.value;skStore();skDrawSvg();skStrip()}};
+  if(q('#skEst'))q('#skEst').onclick=skEstimate;
+  if(q('#skIn')){q('#skIn').oninput=function(){if(SK.sel&&(SK.sel.t==='s'||SK.sel.t==='c')){var k=skLenKey(SK.sel);SK.L[k]=this.value;if(SK.est[k]){delete SK.est[k];var nt=$('#skEstNote');if(nt)nt.remove()}skStore();skDrawSvg();skStrip()}};
     q('#skIn').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();skStep(1)}}}
-  if(q('#skU'))q('#skU').onchange=function(){SK.u=this.value;skStore();skRender(true)};
+  if(q('#skU'))q('#skU').onchange=function(){SK.u=this.value;Object.keys(SK.est).forEach(function(k){delete SK.L[k]});SK.est={};skStore();skRender()};
   if(q('#skNext'))q('#skNext').onclick=function(){skStep(1)};
   if(q('#skPrev'))q('#skPrev').onclick=function(){skStep(-1)};
   if(q('#skStart'))q('#skStart').onclick=function(){SK.sel=skItems()[0]||null;skRender();skFocus()};
@@ -2511,7 +2592,9 @@ function skPlace(){
     for(i=0;i<n;i++)sides.push(SK.L[skSideKey(i)]||'');
     var tp={sides:sides,diags:SK.cr.map(function(c){return SK.L[skCrKey(c)]||''}),hub:0,u:SK.u,brg:0,mir:false,sk:skData()};
     if(n>=4)tp.cr=cr;
-    return{corners:tapeCorners(r.Q,org.lat,org.lon,90,false),tape:tp};
+    var cs=tapeCorners(r.Q,org.lat,org.lon,90,false);
+    if(r.estN){tp.est={n:r.estN,sig:Math.round(r.estSig*10)/10};var ac=Math.max(0.1,estAcc(r.Q,r.sig));cs.forEach(function(c){c.acc=ac})}
+    return{corners:cs,tape:tp};
   });
 }
 
