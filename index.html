@@ -49,6 +49,7 @@ button:disabled{opacity:.5}
 .skbig{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1.1}.skbig small{font-size:16px;font-weight:600;color:var(--mut)}
 #skCv{flex:1;min-height:0;position:relative;touch-action:none;background:var(--card);border-top:1px solid var(--line)}
 #skSvg{position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:none}
+label.fb{display:block;text-align:center;font-weight:600;font-size:16px;border-radius:12px;padding:13px 16px;margin:0;background:var(--soft);color:var(--ink);cursor:pointer}label.fb.pri{background:var(--acc);color:var(--accInk)}
 #skZ{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:8px}
 #skZ button{width:46px;height:46px;padding:0;font-size:24px;line-height:1;border-radius:12px;background:var(--card);border:1px solid var(--line);box-shadow:0 1px 5px rgba(0,0,0,.2)}
 .skm{display:flex;gap:4px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
@@ -501,6 +502,118 @@ function pdfFromJpeg(jpg,w,h,pw,ph){
   put(t+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xo+'\n%%EOF\n');
   var out=new Uint8Array(off),p=0;chunks.forEach(function(c){out.set(c,p);p+=c.length});return out;
 }
+// ---- plan photo: find the outline of the plot in a picture of a paper plan (grey values g, w x h). Returns corners (0..1 of the picture, clockwise, starting top left) or null.
+function pmInk(g,w,h,T){
+  var r=Math.max(6,Math.round(Math.min(w,h)/36)),W=w+1,I=new Float64Array(W*(h+1)),ink=new Uint8Array(w*h),x,y,s;
+  for(y=0;y<h;y++){s=0;for(x=0;x<w;x++){s+=g[y*w+x];I[(y+1)*W+x+1]=I[y*W+x+1]+s}}
+  for(y=0;y<h;y++)for(x=0;x<w;x++){
+    var x0=Math.max(0,x-r),x1=Math.min(w,x+r+1),y0=Math.max(0,y-r),y1=Math.min(h,y+r+1),m=(I[y1*W+x1]-I[y0*W+x1]-I[y1*W+x0]+I[y0*W+x0])/((x1-x0)*(y1-y0));
+    if(m-g[y*w+x]>T)ink[y*w+x]=1}
+  return ink;
+}
+function pmDil(m,w,h,r){
+  var t=new Uint8Array(w*h),o=new Uint8Array(w*h),P=new Int32Array(Math.max(w,h)+1),x,y;
+  for(y=0;y<h;y++){for(x=0;x<w;x++)P[x+1]=P[x]+m[y*w+x];for(x=0;x<w;x++)t[y*w+x]=P[Math.min(w,x+r+1)]-P[Math.max(0,x-r)]>0?1:0}
+  for(x=0;x<w;x++){for(y=0;y<h;y++)P[y+1]=P[y]+t[y*w+x];for(y=0;y<h;y++)o[y*w+x]=P[Math.min(h,y+r+1)]-P[Math.max(0,y-r)]>0?1:0}
+  return o;
+}
+function pmEro(m,w,h,r){var n=w*h,v=new Uint8Array(n),i;for(i=0;i<n;i++)v[i]=m[i]?0:1;var d=pmDil(v,w,h,r);for(i=0;i<n;i++)v[i]=d[i]?0:1;return v}
+// everything that can be reached from the picture edge without crossing the mask d (4 neighbours)
+function pmFlood(d,w,h){
+  var n=w*h,seen=new Uint8Array(n),st=new Int32Array(n),sp=0,i,x,y,push=function(k){if(!d[k]&&!seen[k]){seen[k]=1;st[sp++]=k}};
+  for(x=0;x<w;x++){push(x);push((h-1)*w+x)}for(y=0;y<h;y++){push(y*w);push(y*w+w-1)}
+  while(sp){i=st[--sp];x=i%w;y=(i-x)/w;if(x>0)push(i-1);if(x<w-1)push(i+1);if(y>0)push(i-w);if(y<h-1)push(i+w)}
+  return seen;
+}
+// the biggest 4-connected blob of m: {mask,size}
+function pmBiggest(m,w,h){
+  var n=w*h,lab=new Int32Array(n),st=new Int32Array(n),best=0,bl=0,L=0,i,j,x,y;
+  for(j=0;j<n;j++){if(!m[j]||lab[j])continue;L++;var sp=0,sz=0;st[sp++]=j;lab[j]=L;
+    while(sp){i=st[--sp];sz++;x=i%w;y=(i-x)/w;
+      if(x>0&&m[i-1]&&!lab[i-1]){lab[i-1]=L;st[sp++]=i-1}if(x<w-1&&m[i+1]&&!lab[i+1]){lab[i+1]=L;st[sp++]=i+1}
+      if(y>0&&m[i-w]&&!lab[i-w]){lab[i-w]=L;st[sp++]=i-w}if(y<h-1&&m[i+w]&&!lab[i+w]){lab[i+w]=L;st[sp++]=i+w}}
+    if(sz>best){best=sz;bl=L}}
+  var o=new Uint8Array(n);if(bl)for(j=0;j<n;j++)if(lab[j]===bl)o[j]=1;
+  return{mask:o,size:best};
+}
+// outer edge of a blob, pixel by pixel, clockwise on the screen (Moore neighbour tracing)
+function pmTrace(c,w,h){
+  var sx=-1,sy=-1,i,k,D=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  for(i=0;i<w*h;i++)if(c[i]){sy=Math.floor(i/w);sx=i%w;break}
+  if(sx<0)return[];
+  var px=sx,py=sy,bd=4,out=[[sx,sy]],guard=w*h*4;
+  while(guard-->0){
+    var f=-1;for(k=1;k<=8;k++){var nd=(bd+k)%8,nx=px+D[nd][0],ny=py+D[nd][1];if(nx>=0&&ny>=0&&nx<w&&ny<h&&c[ny*w+nx]){f=nd;break}}
+    if(f<0)break;
+    var qx=px+D[f][0],qy=py+D[f][1],pv=(f+7)%8,bx=px+D[pv][0]-qx,by=py+D[pv][1]-qy,nb=bd;
+    for(k=0;k<8;k++)if(D[k][0]===bx&&D[k][1]===by){nb=k;break}
+    px=qx;py=qy;bd=nb;
+    if(px===sx&&py===sy)break;
+    out.push([px,py]);
+  }
+  return out;
+}
+function pmDP(A,eps){
+  var n=A.length,keep=new Uint8Array(n),st=[[0,n-1]],i,o=[];keep[0]=keep[n-1]=1;
+  while(st.length){var s=st.pop(),a=s[0],b=s[1],ax=A[a][0],ay=A[a][1],dx=A[b][0]-ax,dy=A[b][1]-ay,l=Math.hypot(dx,dy)||1,m=-1,md=0;
+    for(i=a+1;i<b;i++){var d=Math.abs((A[i][0]-ax)*dy-(A[i][1]-ay)*dx)/l;if(d>md){md=d;m=i}}
+    if(m>=0&&md>eps){keep[m]=1;st.push([a,m],[m,b])}}
+  for(i=0;i<n;i++)if(keep[i])o.push(A[i]);return o;
+}
+function pmSimp(P,eps){
+  var n=P.length,b=0,bd=-1,i;if(n<3)return P.slice();
+  for(i=1;i<n;i++){var d=Math.pow(P[i][0]-P[0][0],2)+Math.pow(P[i][1]-P[0][1],2);if(d>bd){bd=d;b=i}}
+  var a1=pmDP(P.slice(0,b+1),eps),a2=pmDP(P.slice(b).concat([P[0]]),eps);
+  return a1.concat(a2.slice(1,a2.length-1));
+}
+// drop corners that lie (nearly) on the line between their neighbours, least important first
+function pmClean(P,eps){
+  var Q=P.slice();
+  while(Q.length>3){
+    var bi=-1,bd=eps,i,n=Q.length;
+    for(i=0;i<n;i++){var a=Q[(i+n-1)%n],b=Q[i],c=Q[(i+1)%n],dx=c[0]-a[0],dy=c[1]-a[1],l=Math.hypot(dx,dy)||1,d=Math.abs((b[0]-a[0])*dy-(b[1]-a[1])*dx)/l;if(d<bd){bd=d;bi=i}}
+    if(bi<0)break;Q.splice(bi,1);
+  }
+  return Q;
+}
+// put every corner where the straight lines along its two sides meet (the traced edge is a little rounded at the corners)
+function pmRefit(C,P,lim){
+  var n=P.length,N=C.length,idx=P.map(function(p){return C.indexOf(p)}),L=[],k,i;
+  for(k=0;k<n;k++){
+    var i0=idx[k],i1=idx[(k+1)%n];if(i1<=i0)i1+=N;
+    var a=Math.ceil(i0+(i1-i0)*.2),b=Math.floor(i1-(i1-i0)*.2),mx=0,my=0,c=0,sxx=0,syy=0,sxy=0;
+    if(b-a<5){L.push(null);continue}
+    for(i=a;i<=b;i++){var q=C[i%N];mx+=q[0];my+=q[1];c++}mx/=c;my/=c;
+    for(i=a;i<=b;i++){var q2=C[i%N],dx=q2[0]-mx,dy=q2[1]-my;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy}
+    var th=Math.atan2(2*sxy,sxx-syy)/2;L.push({x:mx,y:my,u:Math.cos(th),v:Math.sin(th)});
+  }
+  return P.map(function(p,k){
+    var A=L[(k+n-1)%n],B=L[k];if(!A||!B)return p;
+    var den=A.u*B.v-A.v*B.u;if(Math.abs(den)<.17)return p;
+    var t=((B.x-A.x)*B.v-(B.y-A.y)*B.u)/den,x=A.x+t*A.u,y=A.y+t*A.v;
+    return Math.hypot(x-p[0],y-p[1])<=lim?[x,y]:p;
+  });
+}
+function planOutline(g,w,h,maxN){
+  maxN=maxN||12;var m=Math.min(w,h),ink=pmInk(g,w,h,40),tries=[Math.max(1,Math.round(m*.003)),Math.max(2,Math.round(m*.006)),Math.max(4,Math.round(m*.012)),Math.max(7,Math.round(m*.022))],ti,n=w*h,i,blob=null;
+  for(ti=0;ti<tries.length&&!blob;ti++){
+    var d=tries[ti],reach=pmFlood(pmDil(ink,w,h,d),w,h),M=new Uint8Array(n);
+    for(i=0;i<n;i++)M[i]=reach[i]?0:1;
+    var ro=Math.max(3,Math.round(m*.02)),b=pmBiggest(pmEro(pmDil(pmEro(M,w,h,ro),w,h,ro),w,h,d+2),w,h);
+    if(b.size>=n*0.03&&b.size<=n*0.92)blob=b;
+  }
+  if(!blob)return null;
+  var C=pmTrace(blob.mask,w,h);if(C.length<8)return null;
+  var diag=Math.hypot(w,h),eps=Math.max(2,diag*.012),P=pmClean(pmSimp(C,eps),eps),guard=40;
+  while(P.length>maxN&&guard-->0){eps*=1.2;P=pmClean(pmSimp(C,eps),eps)}
+  if(P.length<3)return null;
+  P=pmRefit(C,P,Math.max(6,m*.06));
+  var ar=0,k;for(k=0;k<P.length;k++){var a=P[k],q=P[(k+1)%P.length];ar+=a[0]*q[1]-q[0]*a[1]}
+  if(ar<0)P.reverse();
+  var s0=0,bv=1e18;for(k=0;k<P.length;k++){var v=P[k][0]+P[k][1];if(v<bv){bv=v;s0=k}}
+  P=P.slice(s0).concat(P.slice(0,s0));
+  return{pts:P.map(function(p){return{x:p[0]/w,y:p[1]/h}}),area:blob.size/n};
+}
 // </MATH>
 
 (function(){
@@ -541,7 +654,7 @@ function phGet(id){return phTx('readonly',function(st){return st.get(id)})}
 function phDel(id){return phTx('readwrite',function(st){return st.delete(id)}).catch(function(){})}
 function shrink(file,max){
   return new Promise(function(res,rej){
-    var done=function(w,h,src){var k=Math.min(1,max/Math.max(w,h)),cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(w*k));cv.height=Math.max(1,Math.round(h*k));cv.getContext('2d').drawImage(src,0,0,cv.width,cv.height);cv.toBlob(function(b){b?res(b):rej(new Error('no blob'))},'image/jpeg',0.8)};
+    var done=function(w,h,src){var k=Math.min(1,max/Math.max(w,h)),cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(w*k));cv.height=Math.max(1,Math.round(h*k));var cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);cx.drawImage(src,0,0,cv.width,cv.height);cv.toBlob(function(b){b?res(b):rej(new Error('no blob'))},'image/jpeg',0.8)};
     var viaImg=function(){var u=URL.createObjectURL(file),im=new Image();im.onload=function(){done(im.naturalWidth,im.naturalHeight,im);URL.revokeObjectURL(u)};im.onerror=function(){URL.revokeObjectURL(u);rej(new Error('bad image'))};im.src=u};
     if(window.createImageBitmap){createImageBitmap(file).then(function(b){done(b.width,b.height,b)},viaImg)}else viaImg();
   });
@@ -1448,7 +1561,7 @@ function thumbsInto(el,ids,onDel){
 function bigPhoto(src){sheet('<img src="'+src+'" alt="photo" style="width:100%;border-radius:12px;display:block"><div class="row"><button class="pri" id="bpOk">Close</button></div>');$('#bpOk').onclick=closeSheet}
 function gcPhotos(){
   var used={};
-  var scan=function(o){[o.corners].concat((o.holes||[]).map(function(h){return h.corners})).forEach(function(r){(r||[]).forEach(function(c){(c.ph||[]).forEach(function(id){used[id]=1})})})};
+  var scan=function(o){if(o.sk&&o.sk.bg)used[o.sk.bg.id]=1;if(o.tape&&o.tape.sk&&o.tape.sk.bg)used[o.tape.sk.bg.id]=1;[o.corners].concat((o.holes||[]).map(function(h){return h.corners})).forEach(function(r){(r||[]).forEach(function(c){(c.ph||[]).forEach(function(id){used[id]=1})})})};
   S.plots.forEach(scan);scan(S.draft);
   var scanS=function(t){(String(t||'').match(/"ph":\[[^\]]*\]/g)||[]).forEach(function(m){try{JSON.parse('{'+m+'}').ph.forEach(function(id){used[id]=1})}catch(e){}})};
   (M.rdo||[]).forEach(function(r){scanS(r.before);scanS(r.after)});(M.estk||[]).forEach(function(t){scanS(t.snap);scanS(t.after)});(M.mrdo||[]).forEach(function(r){(r.c.ph||[]).forEach(function(id){used[id]=1})});
@@ -1961,7 +2074,7 @@ function tapePlace(){
 }
 
 // ---------- sketch: draw the plot like on paper, then type every tape length on it ----------
-var SKW=360,SKH=520,SK={open:false,wired:false,mode:'draw',pts:[],closed:false,cr:[],L:{},nid:1,u:'m',sel:null,pend:-1,un:[],re:[],dn:null,res:null,v:{z:1,cx:180,cy:260},vr:{z:1,cx:180,cy:260},ptr:{},gest:false,g:null};
+var SKW=360,SKH=520,SK={open:false,wired:false,mode:'draw',pts:[],closed:false,cr:[],L:{},nid:1,u:'m',sel:null,pend:-1,un:[],re:[],dn:null,res:null,v:{z:1,cx:180,cy:260},vr:{z:1,cx:180,cy:260},ptr:{},gest:false,g:null,bg:null,bgUrl:null};
 function skKey(a,b){return Math.min(a,b)+'-'+Math.max(a,b)}
 function skIdx(id){for(var i=0;i<SK.pts.length;i++)if(SK.pts[i].id===id)return i;return-1}
 function skSideKey(i){var n=SK.pts.length;return skKey(SK.pts[i].id,SK.pts[(i+1)%n].id)}
@@ -1972,11 +2085,11 @@ function skClean(){
   var n=SK.pts.length,seen={};
   SK.cr=SK.cr.filter(function(c){var a=skIdx(c[0]),b=skIdx(c[1]);if(a<0||b<0||a===b)return false;var dd=Math.abs(a-b);if(dd===1||dd===n-1)return false;var k=skCrKey(c);if(seen[k])return false;seen[k]=1;return true});
 }
-function skData(){return{pts:SK.pts.map(function(p){return[+p.x.toFixed(1),+p.y.toFixed(1),p.id]}),closed:SK.closed,cr:clone(SK.cr),L:clone(SK.L),nid:SK.nid,u:SK.u}}
+function skData(){return{pts:SK.pts.map(function(p){return[+p.x.toFixed(1),+p.y.toFixed(1),p.id]}),closed:SK.closed,cr:clone(SK.cr),L:clone(SK.L),nid:SK.nid,u:SK.u,bg:SK.bg?clone(SK.bg):null}}
 function skStore(){S.draft.sk=skData();saveDraft()}
 function skLoad(){
   var d=S.draft,s=d.sk||(d.tape&&d.tape.sk)||null,t=d.tape;
-  SK.sel=null;SK.pend=-1;SK.un=[];SK.re=[];SK.dn=null;
+  SK.sel=null;SK.pend=-1;SK.un=[];SK.re=[];SK.dn=null;SK.bg=(s&&s.bg)?clone(s.bg):null;
   if(s){SK.pts=s.pts.map(function(p){return{x:p[0],y:p[1],id:p[2]}});SK.closed=!!s.closed;SK.cr=clone(s.cr||[]);SK.L=clone(s.L||{});SK.nid=s.nid||SK.pts.length+1;SK.u=s.u||'m'}
   else if(t&&t.sides&&t.sides.length>=3){
     var n=t.sides.length,i;SK.pts=[];SK.L={};SK.cr=[];SK.nid=n+1;SK.closed=true;SK.u=t.u||'m';
@@ -1984,7 +2097,7 @@ function skLoad(){
     for(i=0;i<n;i++)SK.L[skKey(i+1,(i+1)%n+1)]=String(t.sides[i]||'');
     if(n>=4)(t.cr||tapeCross(n,(t.hub||0)%n)).forEach(function(c,k){SK.cr.push([c[0]+1,c[1]+1]);SK.L[skKey(c[0]+1,c[1]+1)]=String((t.diags&&t.diags[k])||'')});
   }else{SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.nid=1;SK.u=inFt()?'ft':'m'}
-  skClean();SK.mode=SK.closed?'len':'draw';
+  skClean();SK.mode=SK.closed?'len':'draw';skBgLoad();
 }
 function skSnap(){return JSON.stringify({p:SK.pts,c:SK.closed,r:SK.cr})}
 function skPut(j){var o=JSON.parse(j);SK.pts=o.p;SK.closed=o.c;SK.cr=o.r;SK.sel=null;SK.pend=-1}
@@ -2025,7 +2138,17 @@ function skSize(){
   var dw=W-SKW,dh=H-SKH;[SK.v,SK.vr].forEach(function(v){v.cx+=dw/(2*v.z);v.cy+=dh/(2*v.z)});
   SKW=W;SKH=H;s.setAttribute('viewBox','0 0 '+W+' '+H);
 }
-function skPaint(){var s=$('#skSvg');if(!s)return;skSize();s.innerHTML=(SK.mode==='res'&&SK.res&&SK.res.ok)?skResSvg(SK.res):skSketchSvg()}
+function skPaint(){
+  var fg=$('#skFg');if(!fg)return;skSize();
+  var res=SK.mode==='res'&&SK.res&&SK.res.ok,im=$('#skBgI'),b=SK.bg;
+  if(im){
+    if(b&&b.on&&SK.bgUrl&&!res){var v=SK.v,a=skS(b.x,b.y,v);
+      if(im.getAttribute('data-u')!==SK.bgUrl){im.setAttribute('href',SK.bgUrl);im.setAttributeNS('http://www.w3.org/1999/xlink','href',SK.bgUrl);im.setAttribute('data-u',SK.bgUrl)}
+      im.setAttribute('x',a.x.toFixed(1));im.setAttribute('y',a.y.toFixed(1));im.setAttribute('width',(b.w*v.z).toFixed(1));im.setAttribute('height',(b.h*v.z).toFixed(1));im.setAttribute('opacity',b.op);im.style.display='';
+    }else im.style.display='none';
+  }
+  fg.innerHTML=res?skResSvg(SK.res):skSketchSvg();
+}
 function skZoomAt(ux,uy,f){var v=skV(),wx=v.cx+(ux-SKW/2)/v.z,wy=v.cy+(uy-SKH/2)/v.z,z=Math.max(.2,Math.min(14,v.z*f));v.cx=wx-(ux-SKW/2)/z;v.cy=wy-(uy-SKH/2)/z;v.z=z;skPaint()}
 function skFitSketch(){
   var P=SK.pts,v=SK.v;
@@ -2074,8 +2197,20 @@ function skGrid(v){
 }
 function skXY(a){return a.x.toFixed(1)+','+a.y.toFixed(1)}
 function skLine(a,b,col,w,dash,cap){return'<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+col+'" stroke-width="'+w+'"'+(dash?' stroke-dasharray="'+dash+'"':'')+(cap?' stroke-linecap="round"':'')+'/>'}
+// corners that can be joined to corner a by a cross: not a neighbour, does not cut another cross, crosses still to give (or it is there already: tapping removes it)
+function skPartners(a){
+  var n=SK.pts.length,ok=[],b;
+  for(b=0;b<n;b++){
+    var dd=Math.abs(a-b);if(b===a||dd===1||dd===n-1){ok.push(false);continue}
+    var lo=Math.min(a,b),hi=Math.max(a,b),ex=false,bad=false;
+    SK.cr.forEach(function(c){var x=skIdx(c[0]),y=skIdx(c[1]),l=Math.min(x,y),h=Math.max(x,y);
+      if(l===lo&&h===hi)ex=true;else if((l<lo&&lo<h&&h<hi)||(lo<l&&l<hi&&hi<h))bad=true});
+    ok.push(ex||(!bad&&SK.cr.length<n-3));
+  }
+  return ok;
+}
 function skSketchSvg(){
-  var v=SK.v,P=SK.pts,n=P.length,i,Q=P.map(function(q){return skS(q.x,q.y,v)}),g=skGrid(v);
+  var v=SK.v,P=SK.pts,n=P.length,i,Q=P.map(function(q){return skS(q.x,q.y,v)}),g=(SK.bg&&SK.bg.on&&SK.bgUrl)?'':skGrid(v);
   if(n>=2){var pts=Q.map(skXY).join(' ');
     g+=SK.closed?'<polygon points="'+pts+'" fill="var(--fill)" stroke="var(--mut)" stroke-width="2.5" stroke-linejoin="round"/>':'<polyline points="'+pts+'" fill="none" stroke="var(--mut)" stroke-width="2.5" stroke-linejoin="round"/>'}
   SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var on=skSame(SK.sel,{t:'c',k:k});
@@ -2087,6 +2222,7 @@ function skSketchSvg(){
       g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,val||'?',skSame(SK.sel,it),!skNum(val),'var(--mut)')}
     SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var val=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,val||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(val),'var(--warn)')})}
   for(i=0;i<n;i++)g+=skCorner(Q[i].x,Q[i].y,i,SK.sel&&SK.sel.t==='p'&&SK.sel.i===i,SK.pend===i);
+  if(SK.closed&&SK.mode==='cross'&&SK.pend>=0){var pr=skPartners(SK.pend);for(i=0;i<n;i++)if(pr[i])g+='<circle class="skr" cx="'+Q[i].x.toFixed(1)+'" cy="'+Q[i].y.toFixed(1)+'" r="22" fill="none" stroke="var(--bad)" stroke-width="3.5"/>'}
   if(!SK.closed&&n>=3&&SK.mode==='draw')g+='<circle cx="'+Q[0].x.toFixed(1)+'" cy="'+Q[0].y.toFixed(1)+'" r="21" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-dasharray="4 4"/>';
   if(!n)g+='<text x="'+SKW/2+'" y="'+SKH/2+'" text-anchor="middle" font-size="16" fill="var(--mut)">Tap here to put corner 1</text>';
   return g;
@@ -2121,15 +2257,16 @@ function skPanel(){
   if(m==='draw'){
     h+='<div class="skt">'+(SK.closed?'The shape is closed. Use <b>Sides</b> to type the lengths, or <b>Move</b> to change the drawing.':!n?'<b>Step 1.</b> Tap the corners one by one round the plot, like on your paper sketch. <span class="mut">Pinch to zoom, drag empty space to move.</span>':n<3?'Corner '+n+' placed. Tap the next corner.':'Corner '+n+' placed. Keep tapping round the plot. When done, tap <b>corner 1</b> again or press Close shape.')+'</div>';
     if(!SK.closed)h+='<div class="row"><button class="pri" id="skCl"'+(n>=3?'':' disabled')+'>Close shape</button></div>';
+    if(!n)h+='<div class="row" style="margin-top:6px"><button id="skPh">📷 Start from a photo of the plan</button></div>';
   }else if(m==='len'){
     if(it&&(it.t==='s'||it.t==='c'))h+=skInHTML(it,'<button id="skNext" class="pri">Next ▶</button>')+'<div class="row" style="margin-top:6px"><button id="skPrev">◀ Back</button>'+(it.t==='c'?'<button id="skRm" class="danger">Remove cross</button>':'')+'</div>';
     else h+='<div class="skt"><b>Step 2.</b> Tap a side or a cross on the drawing to type its length. Or press Start.</div><div class="row"><button class="pri" id="skStart">Start with side 1</button></div>';
   }else if(m==='move'){
-    if(it&&it.t==='p')h+='<div class="skt"><b>Corner '+(it.i+1)+'</b> selected. Drag it to move.</div><div class="row"><button id="skDel" class="danger">Delete this corner</button></div>';
+    if(it&&it.t==='p')h+='<div class="skt"><b>Corner '+(it.i+1)+'</b> selected. Drag it to move.</div><div class="row"><button id="skOne"'+(it.i?'':' disabled')+'>Make it corner 1</button><button id="skDel" class="danger">Delete this corner</button></div>';
     else h+='<div class="skt">Drag a corner to move it. Tap on a side to add a new corner there. Tap a corner to select it. Pinch to zoom for small sides.</div>';
   }else if(m==='cross'){
     var need=Math.max(0,n-3);
-    h+='<div class="skt">'+(n<4?'A triangle needs no crosses.':'<b>Crosses</b> are tapes pulled across the plot. Tap two corners to add one. '+n+' corners need <b>'+need+'</b>, you have '+SK.cr.length+'.')+'</div>';
+    h+='<div class="skt">'+(SK.pend>=0?'<b>Corner '+(SK.pend+1)+'</b> chosen. Tap a corner with a <b style="color:var(--bad)">red ring</b> to make the cross. Tap corner '+(SK.pend+1)+' again to cancel.':n<4?'A triangle needs no crosses.':'<b>Crosses</b> are tapes pulled across the plot. Tap two corners to add one. '+n+' corners need <b>'+need+'</b>, you have '+SK.cr.length+'.')+'</div>';
     if(it&&it.t==='c')h+=skInHTML(it,'<button id="skRm" class="danger">Remove</button>');
     if(n>=4)h+='<div class="row" style="margin-top:6px"><button id="skSug">Suggest crosses</button><button id="skClr"'+(SK.cr.length?'':' disabled')+'>Clear crosses</button></div>';
   }else{
@@ -2143,6 +2280,8 @@ function skPanel(){
   $('#skPanel').innerHTML=h;
   var q=function(s){return $(s)};
   if(q('#skCl'))q('#skCl').onclick=skCloseShape;
+  if(q('#skPh'))q('#skPh').onclick=skPhotoSheet;
+  if(q('#skOne'))q('#skOne').onclick=function(){if(!SK.sel||SK.sel.t!=='p')return;var i=SK.sel.i;skPush();SK.pts=SK.pts.slice(i).concat(SK.pts.slice(0,i));SK.sel={t:'p',i:0};skAfter()};
   if(q('#skIn')){q('#skIn').oninput=function(){if(SK.sel&&(SK.sel.t==='s'||SK.sel.t==='c')){SK.L[skLenKey(SK.sel)]=this.value;skStore();skDrawSvg();skStrip()}};
     q('#skIn').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();skStep(1)}}}
   if(q('#skU'))q('#skU').onchange=function(){SK.u=this.value;skStore();skRender(true)};
@@ -2221,6 +2360,7 @@ function skTap(d){
       if(SK.pend===d.ci){SK.pend=-1;skRender();return}
       var a=SK.pend,b=d.ci,dd=Math.abs(a-b);SK.pend=-1;
       if(dd===1||dd===n-1){toast('Corners '+(Math.min(a,b)+1)+' and '+(Math.max(a,b)+1)+' are joined by a side already');skRender();return}
+      if(!skPartners(a)[b]){toast(SK.cr.length>=n-3?n+' corners need only '+(n-3)+' crosses. Remove one first.':'That cross would cut through another cross');skRender();return}
       var ia=SK.pts[a].id,ib=SK.pts[b].id,at=-1;SK.cr.forEach(function(c,k){if(skCrKey(c)===skKey(ia,ib))at=k});
       skPush();if(at>=0){SK.cr.splice(at,1);SK.sel=null}else{SK.cr.push([ia,ib]);SK.sel={t:'c',k:SK.cr.length-1}}
       skAfter();if(at<0)skFocus();
@@ -2230,7 +2370,7 @@ function skTap(d){
 function skWire(){
   if(SK.wired)return;SK.wired=true;
   var el=document.createElement('div');el.id='skv';
-  el.innerHTML='<div class="skh"><button id="skX" aria-label="Close sketch">✕</button><b>Sketch</b><button id="skUn" aria-label="Undo">↶</button><button id="skRe" aria-label="Redo">↷</button><button id="skMore" aria-label="More">⋯</button></div><div class="sks" id="skStrip"></div><div class="skp" id="skPanel"></div><div id="skCv"><svg id="skSvg" viewBox="0 0 '+SKW+' '+SKH+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Your sketch"></svg><div id="skZ"><button id="skZi" aria-label="Zoom in">+</button><button id="skZo" aria-label="Zoom out">&minus;</button><button id="skZf" aria-label="Fit the drawing to the screen">&#10530;</button></div></div>'
+  el.innerHTML='<div class="skh"><button id="skX" aria-label="Close sketch">✕</button><b>Sketch</b><button id="skUn" aria-label="Undo">↶</button><button id="skRe" aria-label="Redo">↷</button><button id="skMore" aria-label="More">⋯</button></div><div class="sks" id="skStrip"></div><div class="skp" id="skPanel"></div><div id="skCv"><svg id="skSvg" viewBox="0 0 '+SKW+' '+SKH+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Your sketch"><image id="skBgI" x="0" y="0" width="1" height="1" preserveAspectRatio="none" style="display:none"></image><g id="skFg"></g></svg><div id="skZ"><button id="skZi" aria-label="Zoom in">+</button><button id="skZo" aria-label="Zoom out">&minus;</button><button id="skZf" aria-label="Fit the drawing to the screen">&#10530;</button></div></div>'
     +'<div class="skm" id="skModes"><button data-sm="draw"><b>✏️</b>Draw</button><button data-sm="len"><b>📏</b>Sides</button><button data-sm="move"><b>✥</b>Move</button><button data-sm="cross"><b>✂️</b>Crosses</button><button data-sm="res"><b>✅</b>Result</button></div>';
   document.body.appendChild(el);
   var svg=$('#skSvg');
@@ -2260,12 +2400,74 @@ function skWire(){
   $('#skX').onclick=skShut;$('#skUn').onclick=skUndo;$('#skRe').onclick=skRedo;$('#skMore').onclick=skMore;
   document.querySelectorAll('#skModes button').forEach(function(b){b.onclick=function(){skMode(b.dataset.sm)}});
 }
+// ----- a photo or picture of the paper plan behind the drawing; the app also tries to find its outline
+function skBgLoad(){
+  if(SK.bgUrl){try{URL.revokeObjectURL(SK.bgUrl)}catch(e){}SK.bgUrl=null}
+  var im=$('#skBgI');if(im)im.removeAttribute('data-u');
+  if(!SK.bg){skPaint();return}
+  var id=SK.bg.id;
+  phGet(id).then(function(b){if(b&&SK.bg&&SK.bg.id===id){SK.bgUrl=URL.createObjectURL(b);skPaint()}}).catch(function(){});
+}
+function skBitmap(blob){
+  return window.createImageBitmap?createImageBitmap(blob):new Promise(function(res,rej){var u=URL.createObjectURL(blob),im=new Image();im.onload=function(){res(im)};im.onerror=function(){rej(new Error('bad image'))};im.src=u});
+}
+function skGray(blob,max){
+  return skBitmap(blob).then(function(im){
+    var iw=im.width||im.naturalWidth,ih=im.height||im.naturalHeight,k=Math.min(1,max/Math.max(iw,ih)),w=Math.max(8,Math.round(iw*k)),h=Math.max(8,Math.round(ih*k)),cv=document.createElement('canvas');
+    cv.width=w;cv.height=h;var cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,w,h);cx.drawImage(im,0,0,w,h);
+    var d=cx.getImageData(0,0,w,h).data,g=new Uint8Array(w*h),i;for(i=0;i<w*h;i++)g[i]=(d[i*4]*299+d[i*4+1]*587+d[i*4+2]*114)/1000;
+    return{g:g,w:w,h:h,iw:iw,ih:ih};
+  });
+}
+function skUsePhoto(f){
+  toast('Reading the photo…');
+  return shrink(f,1600).then(function(blob){
+    return skGray(blob,640).then(function(gr){
+      var id=uid(),v=SK.v,k=Math.min(SKW/v.z*.96/gr.iw,SKH/v.z*.96/gr.ih),w=gr.iw*k,h=gr.ih*k,old=SK.bg&&SK.bg.id;
+      return phPut(id,blob).then(function(){
+        SK.bg={id:id,x:v.cx-w/2,y:v.cy-h/2,w:w,h:h,op:.5,on:true};if(old)phDel(old);
+        skStore();skBgLoad();return skOutline(gr);
+      });
+    });
+  }).catch(function(){toast('Could not read that picture')});
+}
+function skFind(blob){return skGray(blob,640).then(skOutline).catch(function(){toast('Could not read that picture')})}
+function skOutline(gr){
+  var o=planOutline(gr.g,gr.w,gr.h,12);
+  if(!o||o.pts.length<3){toast('The photo is behind the drawing, but I could not find a closed outline. Tap the corners on it. A dark line all round the plot helps.');return}
+  if(SK.pts.length)return choose('Use the outline from the photo?','This replaces the corners you drew. Undo (↶) brings them back.',[{label:'Replace',val:true},{label:'Keep mine',val:false}]).then(function(ok){if(ok)skApplyOutline(o)});
+  skApplyOutline(o);
+}
+function skApplyOutline(o){
+  var b=SK.bg;if(!b)return;skPush();
+  SK.pts=o.pts.map(function(p){return{id:SK.nid++,x:b.x+p.x*b.w,y:b.y+p.y*b.h}});
+  SK.closed=true;SK.sel=null;SK.pend=-1;SK.mode='move';
+  skAfter();skFitSketch();skPaint();
+  toast('Found '+SK.pts.length+' corners. Check them: drag a corner to fix it, tap a side to add one.');
+}
+function skPhotoSheet(){
+  var b=SK.bg,h='<h3>Photo of your plan</h3><div class="mut small">Take a photo of the paper plan, or choose a picture (for a PDF: open it, take a screenshot, choose that). The app tries to draw the outline for you. It cannot read the numbers on the photo: type the lengths yourself. Best: the plan fills the picture, dark lines on light paper.</div>'
+    +'<div class="row" style="margin-top:10px"><label class="fb pri">📷 Take a photo<input type="file" id="phCam" accept="image/*" capture="environment" hidden></label><label class="fb">🖼 Choose a picture<input type="file" id="phPick" accept="image/*" hidden></label></div>';
+  if(b)h+='<div class="tools" style="margin-top:10px"><button id="phAgain">Find the outline again<small>Replaces your corners.</small></button><button id="phHide">'+(b.on?'Hide':'Show')+' the photo<small>It stays saved.</small></button><button id="phRm" class="danger">Remove the photo</button></div><label>How clear the photo is behind the drawing</label><input type="range" id="phOp" min="10" max="100" value="'+Math.round(b.op*100)+'">';
+  h+='<div class="row"><button id="phOk">Close</button></div>';
+  sheet(h);
+  var pick=function(e){var f=e.target.files&&e.target.files[0];if(!f)return;closeSheet();skUsePhoto(f)};
+  $('#phCam').onchange=pick;$('#phPick').onchange=pick;$('#phOk').onclick=closeSheet;
+  if(b){
+    $('#phAgain').onclick=function(){closeSheet();phGet(SK.bg.id).then(function(bl){if(bl)skFind(bl);else toast('The photo is not on this phone any more')})};
+    $('#phHide').onclick=function(){SK.bg.on=!SK.bg.on;skStore();skPaint();skPhotoSheet()};
+    $('#phRm').onclick=function(){var old=SK.bg.id;SK.bg=null;skStore();skBgLoad();phDel(old);closeSheet()};
+    $('#phOp').oninput=function(){SK.bg.op=(+this.value)/100;skPaint()};$('#phOp').onchange=function(){skStore()};
+  }
+}
 function skMore(){
-  sheet('<h3>Sketch tools</h3><div class="tools"><button id="mTurn">🔄 Turn sketch 90°<small>Changes which side is North.</small></button><button id="mFit">⤢ Fit to screen<small>Make the drawing big.</small></button><button id="mSug"'+(SK.pts.length>=4&&SK.closed?'':' disabled')+'>✂️ Suggest crosses<small>Best corner, all inside.</small></button><button id="mClr"'+(SK.cr.length?'':' disabled')+'>Clear crosses<small>Remove all crosses.</small></button><button id="mNew" class="danger">New sketch<small>Erase this drawing.</small></button></div><div class="row"><button id="mOk">Close</button></div>');
+  sheet('<h3>Sketch tools</h3><div class="tools"><button id="mTurn">🔄 Turn sketch 90°<small>Changes which side is North.</small></button><button id="mPh">📷 Photo of your plan<small>Draw the outline from a picture.</small></button><button id="mFit">⤢ Fit to screen<small>Make the drawing big.</small></button><button id="mRev"'+(SK.pts.length>=3?'':' disabled')+'>↔ Reverse the numbering<small>Corner 1 stays, the order flips.</small></button><button id="mSug"'+(SK.pts.length>=4&&SK.closed?'':' disabled')+'>✂️ Suggest crosses<small>Best corner, all inside.</small></button><button id="mClr"'+(SK.cr.length?'':' disabled')+'>Clear crosses<small>Remove all crosses.</small></button><button id="mNew" class="danger">New sketch<small>Erase this drawing.</small></button></div><div class="row"><button id="mOk">Close</button></div>');
   $('#mOk').onclick=closeSheet;
+  $('#mPh').onclick=function(){closeSheet();skPhotoSheet()};
+  $('#mRev').onclick=function(){closeSheet();if(SK.pts.length<3)return;skPush();SK.pts=[SK.pts[0]].concat(SK.pts.slice(1).reverse());SK.sel=null;skAfter()};
   $('#mTurn').onclick=function(){closeSheet();skTurn()};$('#mFit').onclick=function(){closeSheet();skFit()};
   $('#mSug').onclick=function(){closeSheet();skSuggest()};$('#mClr').onclick=function(){closeSheet();skPush();SK.cr=[];SK.sel=null;skAfter()};
-  $('#mNew').onclick=function(){closeSheet();choose('Start a new sketch?','The drawing and all lengths in this sketch will be erased.',[{label:'Erase',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(!ok)return;skPush();SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.sel=null;SK.mode='draw';skAfter();skFitSketch();skPaint()})};
+  $('#mNew').onclick=function(){closeSheet();choose('Start a new sketch?','The drawing and all lengths in this sketch will be erased.',[{label:'Erase',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(!ok)return;skPush();SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.sel=null;SK.mode='draw';if(SK.bg){phDel(SK.bg.id);SK.bg=null;skBgLoad()}skAfter();skFitSketch();skPaint()})};
 }
 function skOpen(){
   skWire();skLoad();SK.open=true;SK.ptr={};SK.gest=false;$('#skv').style.display='flex';document.body.style.overflow='hidden';skSize();skRender();skViewReset();skPaint();
@@ -2606,7 +2808,7 @@ function renderMeasure(){
     }
   }
   gps+='</div>';
-  var tSk=busy?'':'<button id="bSketch" class="opt optp"><span class="ic">&#9999;&#65039;</span><span><b>Draw a sketch</b><small>'+(sk0?'Continue your sketch ('+d.sk.pts.length+' corners)':'Draw the plot, type each tape length. No GPS needed.')+'</small></span></button>';
+  var tSk=busy?'':'<button id="bSketch" class="opt optp"><span class="ic">&#9999;&#65039;</span><span><b>Draw a sketch</b><small>'+(sk0?'Continue your sketch ('+d.sk.pts.length+' corners)':'Draw it by hand or from a photo of the plan. Type each tape length.')+'</small></span></button>';
   var tMap=busy?'':'<button id="bToMap" class="opt"><span class="ic">&#128752;&#65039;</span><span><b>'+(n?'View on satellite map':'Mark on satellite map')+'</b><small>'+(n?'See, drag and edit the corners.':'Tap the corners on the map. No GPS needed.')+'</small></span></button>';
   var tTape=busy?'':'<button id="bTape" class="lnk">Type lengths in a list instead (old way)</button>';
   var tFld=(!busy&&d.mode==='corners'&&n>=3&&n<=12)?'<button id="bField" class="opt"><span class="ic">&#129517;</span><span><b>Field plan</b><small>Check this draft on the ground with a tape.</small></span></button>':'';
