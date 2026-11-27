@@ -44,6 +44,7 @@ const lr=f.tapeSolveTri(Ls,Lc,Ll);ok(lr.ok&&near(lr.area,Math.abs(f.polyArea(L))
 // ---- messages ----
 let r=f.tapeSolveTri([10,10,10,10],[[0,2]],[]);ok(!r.ok&&/cross from corner 1 to corner 3/.test(r.err),'missing length is asked for with real numbers: '+r.err);
 r=f.tapeSolveTri([10,10,10,10],[[0,2]],[40]);ok(!r.ok&&/do not close up/.test(r.err),'impossible length refused: '+r.err);
+ok(Array.isArray(r.tri)&&r.tri.length===3&&r.tri.every(function(x){return x>=0&&x<4}),'the error says which three corners cannot fit: '+JSON.stringify(r.tri));
 r=f.tapeSolveTri([10,0,10,10],[[0,2]],[12]);ok(!r.ok,'zero side refused');
 // ---- sketch: the true shape is turned like the drawing ----
 { // a drawing of the L shape, drawn counter-clockwise, turned 30 degrees and 5 times too small

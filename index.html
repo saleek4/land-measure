@@ -403,13 +403,13 @@ function tapeSolveTri(sides,crs,lens){
   var P=new Array(n),e=chk.ears,last=e[e.length-1],a=last[0],b=last[1],c=last[2];
   var dab=len[tapeKey(a,b)],dac=len[tapeKey(a,c)],dbc=len[tapeKey(b,c)];
   var cx=(dac*dac-dbc*dbc+dab*dab)/(2*dab),h2=dac*dac-cx*cx;
-  if(h2<-1e-9*dab*dab)return{ok:false,err:'These lengths do not close up around corner '+(c+1)+'. Check the lengths of the sides and crosses there',bad:c};
+  if(h2<-1e-9*dab*dab)return{ok:false,err:'These lengths do not close up around corner '+(c+1)+'. Check the lengths of the sides and crosses there',bad:c,tri:[a,b,c]};
   P[a]={x:0,y:0};P[b]={x:dab,y:0};P[c]={x:cx,y:Math.sqrt(Math.max(0,h2))};
   for(i=e.length-2;i>=0;i--){
     var t=e[i],pa=P[t[0]],pb=P[t[2]],v=t[1],da=len[tapeKey(t[0],v)],db=len[tapeKey(v,t[2])],dx=pb.x-pa.x,dy=pb.y-pa.y,D=Math.hypot(dx,dy);
     if(D<1e-9)return{ok:false,err:'Two corners fall on the same spot. Check the lengths',bad:v};
     var ux=dx/D,uy=dy/D,xv=(da*da-db*db+D*D)/(2*D),hh=da*da-xv*xv;
-    if(hh<-1e-9*D*D)return{ok:false,err:'These lengths do not close up around corner '+(v+1)+'. Check the lengths of the sides and crosses there',bad:v};
+    if(hh<-1e-9*D*D)return{ok:false,err:'These lengths do not close up around corner '+(v+1)+'. Check the lengths of the sides and crosses there',bad:v,tri:[t[0],v,t[2]]};
     var hv=Math.sqrt(Math.max(0,hh));
     P[v]={x:pa.x+xv*ux+hv*uy,y:pa.y+xv*uy-hv*ux};
   }
@@ -2111,6 +2111,16 @@ function skLabel(it){var n=SK.pts.length;if(it.t==='s')return'Side '+(it.i+1)+' 
 function skLenKey(it){return it.t==='s'?skSideKey(it.i):skCrKey(SK.cr[it.k])}
 function skLen(it){return SK.L[skLenKey(it)]||''}
 function skFirstMissing(){var its=skItems();for(var i=0;i<its.length;i++)if(!skNum(skLen(its[i])))return its[i];return null}
+// the sides / crosses that join three corners (the three that cannot make a triangle)
+function skTriItems(t){
+  var a=[],its=skItems(),n=SK.pts.length;
+  [[t[0],t[1]],[t[1],t[2]],[t[0],t[2]]].forEach(function(p){
+    for(var k=0;k<its.length;k++){var it=its[k],x,y;
+      if(it.t==='s'){x=it.i;y=(it.i+1)%n}else{x=skIdx(SK.cr[it.k][0]);y=skIdx(SK.cr[it.k][1])}
+      if((x===p[0]&&y===p[1])||(x===p[1]&&y===p[0])){a.push(it);break}}});
+  return a;
+}
+function skIsChk(it){return!!(SK.res&&SK.res.chks&&SK.res.chks.some(function(c){return skSame(c,it)}))}
 function skSolve(){
   var n=SK.pts.length;
   if(!SK.closed||n<3)return{ok:false,err:'Draw the plot first: tap the corners, then press Close shape.',stage:'draw'};
@@ -2119,6 +2129,11 @@ function skSolve(){
   if(n>=4)cr.forEach(function(p,k){T.dm[tkey(p)]=SK.L[skCrKey(SK.cr[k])]||''});
   var r=tapeCalc(T);
   if(!r.ok){var m=skFirstMissing();
+    if(r.tri){var ch=skTriItems(r.tri),vs=ch.map(function(it){return parseFloat(String(skLen(it)).replace(',','.'))});
+      if(ch.length===3&&vs.every(function(x){return x>0})){
+        var mx=vs.indexOf(Math.max.apply(null,vs)),o=[0,1,2].filter(function(j){return j!==mx}),f=function(x){return String(+x.toFixed(2))};
+        r.err=skLabel(ch[mx])+' is '+f(vs[mx])+' '+SK.u+', but '+skLabel(ch[o[0]])+' ('+f(vs[o[0]])+') and '+skLabel(ch[o[1]])+' ('+f(vs[o[1]])+') add up to only '+f(vs[o[0]]+vs[o[1]])+' '+SK.u+'. These three cannot make a triangle. Check them.';
+        r.chks=ch;r.chk=ch.filter(function(it){return it.t==='c'})[0]||ch[0];r.stage='chk';return r}}
     if(/^Choose|^Too many|cut through|twice|joined|split/.test(r.err||''))r.stage='cross';
     else if(m&&(/^Type /.test(r.err||''))){r.err=skLabel(m)+' has no length yet. Tape it and type it here.';r.stage='len';r.miss=m}
     else r.stage='len';
@@ -2219,8 +2234,8 @@ function skSketchSvg(){
   if(SK.closed&&SK.mode!=='move'){
     var ar=0;for(i=0;i<n;i++){var q=Q[i],r2=Q[(i+1)%n];ar+=q.x*r2.y-r2.x*q.y}
     for(i=0;i<n;i++){var a2=Q[i],b2=Q[(i+1)%n],dx=b2.x-a2.x,dy=b2.y-a2.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l,it={t:'s',i:i},val=SK.L[skSideKey(i)]||'';
-      g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,val||'?',skSame(SK.sel,it),!skNum(val),'var(--mut)')}
-    SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var val=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,val||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(val),'var(--warn)')})}
+      g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,val||'?',skSame(SK.sel,it),!skNum(val)||skIsChk(it),'var(--mut)')}
+    SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var val=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,val||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(val)||skIsChk({t:'c',k:k}),'var(--warn)')})}
   for(i=0;i<n;i++)g+=skCorner(Q[i].x,Q[i].y,i,SK.sel&&SK.sel.t==='p'&&SK.sel.i===i,SK.pend===i);
   if(SK.closed&&SK.mode==='cross'&&SK.pend>=0){var pr=skPartners(SK.pend);for(i=0;i<n;i++)if(pr[i])g+='<circle class="skr" cx="'+Q[i].x.toFixed(1)+'" cy="'+Q[i].y.toFixed(1)+'" r="22" fill="none" stroke="var(--bad)" stroke-width="3.5"/>'}
   if(!SK.closed&&n>=3&&SK.mode==='draw')g+='<circle cx="'+Q[0].x.toFixed(1)+'" cy="'+Q[0].y.toFixed(1)+'" r="21" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-dasharray="4 4"/>';
@@ -2245,6 +2260,7 @@ function skStrip(){
   var el=$('#skStrip');if(!el)return;var n=SK.pts.length,r=SK.res,u=S.settings.unit,h;
   if(!SK.closed)h=n?n+' corner'+(n===1?'':'s')+' drawn':'Draw the plot like on your paper sketch';
   else if(r&&r.ok)h=SK.mode==='res'?'All lengths typed. This is your plot.':'<b style="color:var(--ink);font-size:16px">'+fa(r.area,u)+' '+UNIT[u].l+'</b> · about ±'+fa(r.sig,u)+' '+UNIT[u].l;
+  else if(r&&r.chk)h='<b style="color:var(--bad)">⚠ Corners '+r.tri.map(function(x){return x+1}).sort(function(a,b){return a-b}).join(', ')+': lengths do not fit</b>';
   else{var its=skItems(),s=its.filter(function(it){return it.t==='s'&&skNum(skLen(it))}).length,c=its.filter(function(it){return it.t==='c'&&skNum(skLen(it))}).length;
     h='Sides '+s+' of '+n+(n>=4?' · Crosses '+c+' of '+Math.max(n-3,SK.cr.length):'')+' typed'}
   el.innerHTML=h;
@@ -2274,7 +2290,7 @@ function skPanel(){
       h+='<div class="skbig">'+fa(r.area,u)+' <small>'+UNIT[u].l+'</small></div><div class="mut small">'+fa(r.area,'sqm')+' sq m · perimeter '+fl(r.per,1)+' · typical error ±'+fa(r.sig,u)+' '+UNIT[u].l+'</div>'+(r.warn?'<div class="warnbox">'+esc(r.warn)+'</div>':'')
         +'<div class="row" style="margin-top:8px"><button class="pri" id="skPlace"'+(r.warn&&/cross|wraps/.test(r.warn)?' disabled':'')+'>Put on the map</button></div><div class="mut small" style="margin-top:4px">The top of the sketch becomes North.</div>';
     }else{
-      h+='<div class="skt">'+esc((r&&r.err)||'')+'</div><div class="row"><button class="pri" id="skFix">'+(r&&r.stage==='cross'?'Go to Crosses':r&&r.stage==='draw'?'Go to Draw':'Type the missing length')+'</button></div>';
+      h+='<div class="skt">'+esc((r&&r.err)||'')+'</div><div class="row"><button class="pri" id="skFix">'+(r&&r.stage==='cross'?'Go to Crosses':r&&r.stage==='draw'?'Go to Draw':r&&r.stage==='chk'?'Check these lengths':'Type the missing length')+'</button></div>';
     }
   }
   $('#skPanel').innerHTML=h;
@@ -2296,7 +2312,7 @@ function skPanel(){
   if(q('#skClr'))q('#skClr').onclick=function(){skPush();SK.cr=[];SK.sel=null;skAfter()};
   if(q('#skPlace'))q('#skPlace').onclick=skPlace;
   if(q('#skFix'))q('#skFix').onclick=function(){var r=SK.res||{};
-    if(r.stage==='cross')skMode('cross');else if(r.stage==='draw')skMode('draw');else{SK.mode='len';SK.sel=r.miss||skFirstMissing()||skItems()[0]||null;skRender();skFocus()}};
+    if(r.stage==='cross')skMode('cross');else if(r.stage==='draw')skMode('draw');else{SK.mode='len';SK.sel=r.chk||r.miss||skFirstMissing()||skItems()[0]||null;skRender();skFocus()}};
 }
 function skFocus(){var i=$('#skIn');if(i){try{i.focus();i.select()}catch(e){}}}
 function skRender(keepPanel){
