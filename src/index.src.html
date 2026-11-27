@@ -48,7 +48,9 @@ button:disabled{opacity:.5}
 .skin{display:flex;gap:6px;align-items:stretch}.skin input{flex:1;min-width:0;font-size:24px;font-weight:700;padding:8px 12px}.skin select{flex:0 0 66px;font-size:16px}.skin button{flex:0 0 auto;padding:10px 14px}
 .skbig{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1.1}.skbig small{font-size:16px;font-weight:600;color:var(--mut)}
 #skCv{flex:1;min-height:0;position:relative;touch-action:none;background:var(--card);border-top:1px solid var(--line)}
-#skSvg{display:block;width:100%;height:100%;touch-action:none}
+#skSvg{position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:none}
+#skZ{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:8px}
+#skZ button{width:46px;height:46px;padding:0;font-size:24px;line-height:1;border-radius:12px;background:var(--card);border:1px solid var(--line);box-shadow:0 1px 5px rgba(0,0,0,.2)}
 .skm{display:flex;gap:4px;padding:6px 6px calc(6px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
 .skm button{flex:1;padding:7px 2px;font-size:12.5px;background:transparent;color:var(--mut)}.skm button b{display:block;font-size:21px;line-height:1.15}.skm button.on{color:var(--acc);background:var(--soft)}
 .gh{font-size:15px;margin:0 0 8px}.next{margin:2px 2px 10px;padding:10px 12px;background:var(--soft);border-radius:12px;font-size:14.5px;line-height:1.4}
@@ -1959,7 +1961,7 @@ function tapePlace(){
 }
 
 // ---------- sketch: draw the plot like on paper, then type every tape length on it ----------
-var SKW=360,SKH=520,SK={open:false,wired:false,mode:'draw',pts:[],closed:false,cr:[],L:{},nid:1,u:'m',sel:null,pend:-1,un:[],re:[],dn:null,res:null};
+var SKW=360,SKH=520,SK={open:false,wired:false,mode:'draw',pts:[],closed:false,cr:[],L:{},nid:1,u:'m',sel:null,pend:-1,un:[],re:[],dn:null,res:null,v:{z:1,cx:180,cy:260},vr:{z:1,cx:180,cy:260},ptr:{},gest:false,g:null};
 function skKey(a,b){return Math.min(a,b)+'-'+Math.max(a,b)}
 function skIdx(id){for(var i=0;i<SK.pts.length;i++)if(SK.pts[i].id===id)return i;return-1}
 function skSideKey(i){var n=SK.pts.length;return skKey(SK.pts[i].id,SK.pts[(i+1)%n].id)}
@@ -2011,7 +2013,42 @@ function skSolve(){
   var a=skShape(r.P,SK.pts.map(function(p){return{x:p.x,y:-p.y}}));r.Q=a.P;return r;
 }
 // ----- drawing
-function skPt(e){var r=$('#skSvg').getBoundingClientRect(),k=Math.min(r.width/SKW,r.height/SKH);return{x:(e.clientX-r.left-(r.width-SKW*k)/2)/k,y:(e.clientY-r.top-(r.height-SKH*k)/2)/k,k:k}}
+// view: SK.v (the drawing) and SK.vr (the result) = {z zoom, cx cy = the world point at the middle of the canvas}. Sizes on screen stay the same when zoomed.
+function skS(x,y,v){return{x:(x-v.cx)*v.z+SKW/2,y:(y-v.cy)*v.z+SKH/2}}
+function skV(){return SK.mode==='res'&&SK.res&&SK.res.ok?SK.vr:SK.v}
+function skBase(){var r=$('#skSvg').getBoundingClientRect(),k=Math.min(r.width/SKW,r.height/SKH)||1;return{l:r.left+(r.width-SKW*k)/2,t:r.top+(r.height-SKH*k)/2,k:k}}
+function skUnits(cx,cy){var b=skBase();return{x:(cx-b.l)/b.k,y:(cy-b.t)/b.k,b:b.k}}
+function skPt(e){var u=skUnits(e.clientX,e.clientY),v=skV();return{x:v.cx+(u.x-SKW/2)/v.z,y:v.cy+(u.y-SKH/2)/v.z,k:u.b*v.z}}
+function skSize(){
+  var s=$('#skSvg');if(!s)return;var r=s.getBoundingClientRect();if(r.width<50||r.height<50)return;
+  var W=Math.round(r.width),H=Math.round(r.height);if(W===SKW&&H===SKH)return;
+  var dw=W-SKW,dh=H-SKH;[SK.v,SK.vr].forEach(function(v){v.cx+=dw/(2*v.z);v.cy+=dh/(2*v.z)});
+  SKW=W;SKH=H;s.setAttribute('viewBox','0 0 '+W+' '+H);
+}
+function skPaint(){var s=$('#skSvg');if(!s)return;skSize();s.innerHTML=(SK.mode==='res'&&SK.res&&SK.res.ok)?skResSvg(SK.res):skSketchSvg()}
+function skZoomAt(ux,uy,f){var v=skV(),wx=v.cx+(ux-SKW/2)/v.z,wy=v.cy+(uy-SKH/2)/v.z,z=Math.max(.2,Math.min(14,v.z*f));v.cx=wx-(ux-SKW/2)/z;v.cy=wy-(uy-SKH/2)/z;v.z=z;skPaint()}
+function skFitSketch(){
+  var P=SK.pts,v=SK.v;
+  if(!P.length){v.z=1;v.cx=SKW/2;v.cy=SKH/2;return}
+  var xs=P.map(function(q){return q.x}),ys=P.map(function(q){return q.y}),x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys);
+  v.cx=(x0+x1)/2;v.cy=(y0+y1)/2;
+  v.z=P.length<2?1:Math.max(.2,Math.min(8,(SKW-110)/Math.max(x1-x0,1),(SKH-120)/Math.max(y1-y0,1)));
+}
+function skFitView(){
+  if(SK.mode==='res'&&SK.res&&SK.res.ok){SK.vr.z=1;SK.vr.cx=SKW/2;SK.vr.cy=SKH/2}else skFitSketch();
+  skPaint();
+}
+function skViewReset(){SK.v.z=1;SK.v.cx=SKW/2;SK.v.cy=SKH/2;SK.vr.z=1;SK.vr.cx=SKW/2;SK.vr.cy=SKH/2;if(SK.pts.length>=2)skFitSketch()}
+function skGestStart(){
+  var d=SK.dn;if(d&&d.pushed)skAfter();SK.dn=null;SK.gest=true;
+  var ids=Object.keys(SK.ptr),a=SK.ptr[ids[0]],b=SK.ptr[ids[1]],v=skV(),m=skUnits((a.x+b.x)/2,(a.y+b.y)/2);
+  SK.g={d:Math.hypot(a.x-b.x,a.y-b.y)||1,z:v.z,wx:v.cx+(m.x-SKW/2)/v.z,wy:v.cy+(m.y-SKH/2)/v.z};
+}
+function skGestMove(){
+  var ids=Object.keys(SK.ptr);if(ids.length<2||!SK.g)return;
+  var a=SK.ptr[ids[0]],b=SK.ptr[ids[1]],v=skV(),m=skUnits((a.x+b.x)/2,(a.y+b.y)/2),z=Math.max(.2,Math.min(14,SK.g.z*(Math.hypot(a.x-b.x,a.y-b.y)||1)/SK.g.d));
+  v.z=z;v.cx=SK.g.wx-(m.x-SKW/2)/z;v.cy=SK.g.wy-(m.y-SKH/2)/z;skPaint();
+}
 function skHitCorner(p){var best=-1,bd=28/p.k;SK.pts.forEach(function(q,i){var d=Math.hypot(q.x-p.x,q.y-p.y);if(d<bd){bd=d;best=i}});return best}
 function skSegD(p,a,b){var dx=b.x-a.x,dy=b.y-a.y,l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/l)):0,x=a.x+t*dx,y=a.y+t*dy;return{d:Math.hypot(p.x-x,p.y-y),x:x,y:y}}
 function skEnds(it){var P=SK.pts,n=P.length;return it.t==='s'?[P[it.i],P[(it.i+1)%n]]:[P[skIdx(SK.cr[it.k][0])],P[skIdx(SK.cr[it.k][1])]]}
@@ -2025,32 +2062,41 @@ function skPill(x,y,txt,on,empty,col){
   return'<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-11).toFixed(1)+'" width="'+w.toFixed(1)+'" height="22" rx="11" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="'+(on?'var(--acc)':empty?'var(--bad)':col)+'" stroke-width="1.6"'+(empty&&!on?' stroke-dasharray="3 2"':'')+'/><text x="'+x.toFixed(1)+'" y="'+(y+4.3).toFixed(1)+'" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(on?'var(--accInk)':empty?'var(--bad)':'var(--ink)')+'">'+esc(txt)+'</text>';
 }
 function skCorner(x,y,i,on,ring){
-  return'<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="14" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="'+(ring?'var(--warn)':'var(--acc)')+'" stroke-width="'+(ring?4:2.5)+'"/><text x="'+x.toFixed(1)+'" y="'+(y+4.8).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="800" fill="'+(on?'var(--accInk)':'var(--ink)')+'">'+(i+1)+'</text>';
+  return'<circle class="skc" data-c="'+i+'" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="14" fill="'+(on?'var(--acc)':'var(--card)')+'" stroke="'+(ring?'var(--warn)':'var(--acc)')+'" stroke-width="'+(ring?4:2.5)+'"/><text x="'+x.toFixed(1)+'" y="'+(y+4.8).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="800" fill="'+(on?'var(--accInk)':'var(--ink)')+'">'+(i+1)+'</text>';
 }
+function skGrid(v){
+  var sp=24*v.z,st,x0,y0,d='',x,y,a,c;
+  while(sp<16)sp*=2;while(sp>64)sp/=2;
+  st=sp/v.z;x0=Math.floor((v.cx-SKW/2/v.z)/st)*st;y0=Math.floor((v.cy-SKH/2/v.z)/st)*st;
+  for(c=0,x=x0;c<160;c++,x+=st){a=(x-v.cx)*v.z+SKW/2;if(a>SKW)break;d+='M'+a.toFixed(1)+' 0V'+SKH}
+  for(c=0,y=y0;c<260;c++,y+=st){a=(y-v.cy)*v.z+SKH/2;if(a>SKH)break;d+='M0 '+a.toFixed(1)+'H'+SKW}
+  return'<path d="'+d+'" fill="none" stroke="var(--line)" stroke-width="1"/>';
+}
+function skXY(a){return a.x.toFixed(1)+','+a.y.toFixed(1)}
+function skLine(a,b,col,w,dash,cap){return'<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+col+'" stroke-width="'+w+'"'+(dash?' stroke-dasharray="'+dash+'"':'')+(cap?' stroke-linecap="round"':'')+'/>'}
 function skSketchSvg(){
-  var P=SK.pts,n=P.length,g='<defs><pattern id="skgrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="var(--line)" stroke-width="1"/></pattern></defs><rect width="'+SKW+'" height="'+SKH+'" fill="url(#skgrid)"/>',i;
-  if(n>=2){var pts=P.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ');
+  var v=SK.v,P=SK.pts,n=P.length,i,Q=P.map(function(q){return skS(q.x,q.y,v)}),g=skGrid(v);
+  if(n>=2){var pts=Q.map(skXY).join(' ');
     g+=SK.closed?'<polygon points="'+pts+'" fill="var(--fill)" stroke="var(--mut)" stroke-width="2.5" stroke-linejoin="round"/>':'<polyline points="'+pts+'" fill="none" stroke="var(--mut)" stroke-width="2.5" stroke-linejoin="round"/>'}
-  SK.cr.forEach(function(c,k){var a=P[skIdx(c[0])],b=P[skIdx(c[1])];if(!a||!b)return;var on=skSame(SK.sel,{t:'c',k:k});
-    g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+(on?'var(--acc)':'var(--warn)')+'" stroke-width="'+(on?4:2.5)+'" stroke-dasharray="8 5"/>'});
-  if(SK.closed&&SK.sel&&SK.sel.t==='s'){var e=skEnds(SK.sel);g+='<line x1="'+e[0].x.toFixed(1)+'" y1="'+e[0].y.toFixed(1)+'" x2="'+e[1].x.toFixed(1)+'" y2="'+e[1].y.toFixed(1)+'" stroke="var(--acc)" stroke-width="6" stroke-linecap="round"/>'}
+  SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var on=skSame(SK.sel,{t:'c',k:k});
+    g+=skLine(a,b,on?'var(--acc)':'var(--warn)',on?4:2.5,'8 5')});
+  if(SK.closed&&SK.sel&&SK.sel.t==='s'&&Q[SK.sel.i])g+=skLine(Q[SK.sel.i],Q[(SK.sel.i+1)%n],'var(--acc)',6,'',true);
   if(SK.closed&&SK.mode!=='move'){
-    var ar=0;for(i=0;i<n;i++){var q=P[i],r2=P[(i+1)%n];ar+=q.x*r2.y-r2.x*q.y}
-    for(i=0;i<n;i++){var a2=P[i],b2=P[(i+1)%n],dx=b2.x-a2.x,dy=b2.y-a2.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l,it={t:'s',i:i},v=SK.L[skSideKey(i)]||'';
-      g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,v||'?',skSame(SK.sel,it),!skNum(v),'var(--mut)')}
-    SK.cr.forEach(function(c,k){var a=P[skIdx(c[0])],b=P[skIdx(c[1])];if(!a||!b)return;var v=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,v||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(v),'var(--warn)')})}
-  for(i=0;i<n;i++)g+=skCorner(P[i].x,P[i].y,i,SK.sel&&SK.sel.t==='p'&&SK.sel.i===i,SK.pend===i);
-  if(!SK.closed&&n>=3&&SK.mode==='draw')g+='<circle cx="'+P[0].x.toFixed(1)+'" cy="'+P[0].y.toFixed(1)+'" r="21" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-dasharray="4 4"/>';
+    var ar=0;for(i=0;i<n;i++){var q=Q[i],r2=Q[(i+1)%n];ar+=q.x*r2.y-r2.x*q.y}
+    for(i=0;i<n;i++){var a2=Q[i],b2=Q[(i+1)%n],dx=b2.x-a2.x,dy=b2.y-a2.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l,it={t:'s',i:i},val=SK.L[skSideKey(i)]||'';
+      g+=skPill((a2.x+b2.x)/2+nx*20,(a2.y+b2.y)/2+ny*20,val||'?',skSame(SK.sel,it),!skNum(val),'var(--mut)')}
+    SK.cr.forEach(function(c,k){var a=Q[skIdx(c[0])],b=Q[skIdx(c[1])];if(!a||!b)return;var val=SK.L[skCrKey(c)]||'';g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,val||'?',skSame(SK.sel,{t:'c',k:k}),!skNum(val),'var(--warn)')})}
+  for(i=0;i<n;i++)g+=skCorner(Q[i].x,Q[i].y,i,SK.sel&&SK.sel.t==='p'&&SK.sel.i===i,SK.pend===i);
+  if(!SK.closed&&n>=3&&SK.mode==='draw')g+='<circle cx="'+Q[0].x.toFixed(1)+'" cy="'+Q[0].y.toFixed(1)+'" r="21" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-dasharray="4 4"/>';
   if(!n)g+='<text x="'+SKW/2+'" y="'+SKH/2+'" text-anchor="middle" font-size="16" fill="var(--mut)">Tap here to put corner 1</text>';
   return g;
 }
 function skResSvg(r){
-  var Q=r.Q,n=Q.length,xs=Q.map(function(p){return p.x}),ys=Q.map(function(p){return p.y}),x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),m=46,
-  sc=Math.min((SKW-2*m)/((x1-x0)||1),(SKH-2*m)/((y1-y0)||1)),cx=(x0+x1)/2,cy=(y0+y1)/2,i,
-  T=Q.map(function(p){return{x:SKW/2+(p.x-cx)*sc,y:SKH/2-(p.y-cy)*sc}}),
-  g='<defs><pattern id="skgrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="var(--line)" stroke-width="1"/></pattern></defs><rect width="'+SKW+'" height="'+SKH+'" fill="url(#skgrid)"/>';
-  g+='<polygon points="'+T.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ')+'" fill="var(--fill)" stroke="var(--acc)" stroke-width="3" stroke-linejoin="round"/>';
-  SK.cr.forEach(function(c){var a=T[skIdx(c[0])],b=T[skIdx(c[1])];g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="var(--warn)" stroke-width="2" stroke-dasharray="7 5"/>'});
+  var Q=r.Q,n=Q.length,xs=Q.map(function(q){return q.x}),ys=Q.map(function(q){return q.y}),x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),m=46,
+  sc=Math.min((SKW-2*m)/((x1-x0)||1),(SKH-2*m)/((y1-y0)||1)),cx=(x0+x1)/2,cy=(y0+y1)/2,i,v=SK.vr,
+  T=Q.map(function(q){return skS(SKW/2+(q.x-cx)*sc,SKH/2-(q.y-cy)*sc,v)}),g=skGrid(v);
+  g+='<polygon points="'+T.map(skXY).join(' ')+'" fill="var(--fill)" stroke="var(--acc)" stroke-width="3" stroke-linejoin="round"/>';
+  SK.cr.forEach(function(c){var a=T[skIdx(c[0])],b=T[skIdx(c[1])];g+=skLine(a,b,'var(--warn)',2,'7 5')});
   var ar=0;for(i=0;i<n;i++){var q=T[i],r2=T[(i+1)%n];ar+=q.x*r2.y-r2.x*q.y}
   for(i=0;i<n;i++){var a=T[i],b=T[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,nx=ar>0?dy/l:-dy/l,ny=ar>0?-dx/l:dx/l;g+=skPill((a.x+b.x)/2+nx*18,(a.y+b.y)/2+ny*18,SK.L[skSideKey(i)]||'',false,false,'var(--mut)')}
   SK.cr.forEach(function(c){var a=T[skIdx(c[0])],b=T[skIdx(c[1])];g+=skPill((a.x+b.x)/2,(a.y+b.y)/2,SK.L[skCrKey(c)]||'',false,false,'var(--warn)')});
@@ -2058,10 +2104,7 @@ function skResSvg(r){
   g+='<g transform="translate('+(SKW-30)+',30)"><path d="M0 14V-12M-7 -4L0 -14L7 -4" fill="none" stroke="var(--mut)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><text y="30" text-anchor="middle" font-size="12" font-weight="800" fill="var(--mut)">N</text></g>';
   return g;
 }
-function skDrawSvg(){
-  var svg=$('#skSvg');if(!svg)return;SK.res=skSolve();
-  svg.innerHTML=(SK.mode==='res'&&SK.res.ok)?skResSvg(SK.res):skSketchSvg();
-}
+function skDrawSvg(){SK.res=skSolve();skPaint()}
 function skStrip(){
   var el=$('#skStrip');if(!el)return;var n=SK.pts.length,r=SK.res,u=S.settings.unit,h;
   if(!SK.closed)h=n?n+' corner'+(n===1?'':'s')+' drawn':'Draw the plot like on your paper sketch';
@@ -2076,14 +2119,14 @@ function skInHTML(it,more){
 function skPanel(){
   var n=SK.pts.length,m=SK.mode,h='',r=SK.res,it=SK.sel;
   if(m==='draw'){
-    h+='<div class="skt">'+(SK.closed?'The shape is closed. Use <b>Sides</b> to type the lengths, or <b>Move</b> to change the drawing.':!n?'<b>Step 1.</b> Tap the corners one by one round the plot, like on your paper sketch.':n<3?'Corner '+n+' placed. Tap the next corner.':'Corner '+n+' placed. Keep tapping round the plot. When done, tap <b>corner 1</b> again or press Close shape.')+'</div>';
+    h+='<div class="skt">'+(SK.closed?'The shape is closed. Use <b>Sides</b> to type the lengths, or <b>Move</b> to change the drawing.':!n?'<b>Step 1.</b> Tap the corners one by one round the plot, like on your paper sketch. <span class="mut">Pinch to zoom, drag empty space to move.</span>':n<3?'Corner '+n+' placed. Tap the next corner.':'Corner '+n+' placed. Keep tapping round the plot. When done, tap <b>corner 1</b> again or press Close shape.')+'</div>';
     if(!SK.closed)h+='<div class="row"><button class="pri" id="skCl"'+(n>=3?'':' disabled')+'>Close shape</button></div>';
   }else if(m==='len'){
     if(it&&(it.t==='s'||it.t==='c'))h+=skInHTML(it,'<button id="skNext" class="pri">Next ▶</button>')+'<div class="row" style="margin-top:6px"><button id="skPrev">◀ Back</button>'+(it.t==='c'?'<button id="skRm" class="danger">Remove cross</button>':'')+'</div>';
     else h+='<div class="skt"><b>Step 2.</b> Tap a side or a cross on the drawing to type its length. Or press Start.</div><div class="row"><button class="pri" id="skStart">Start with side 1</button></div>';
   }else if(m==='move'){
     if(it&&it.t==='p')h+='<div class="skt"><b>Corner '+(it.i+1)+'</b> selected. Drag it to move.</div><div class="row"><button id="skDel" class="danger">Delete this corner</button></div>';
-    else h+='<div class="skt">Drag a corner to move it. Tap on a side to add a new corner there. Tap a corner to select it.</div>';
+    else h+='<div class="skt">Drag a corner to move it. Tap on a side to add a new corner there. Tap a corner to select it. Pinch to zoom for small sides.</div>';
   }else if(m==='cross'){
     var need=Math.max(0,n-3);
     h+='<div class="skt">'+(n<4?'A triangle needs no crosses.':'<b>Crosses</b> are tapes pulled across the plot. Tap two corners to add one. '+n+' corners need <b>'+need+'</b>, you have '+SK.cr.length+'.')+'</div>';
@@ -2120,7 +2163,7 @@ function skFocus(){var i=$('#skIn');if(i){try{i.focus();i.select()}catch(e){}}}
 function skRender(keepPanel){
   SK.res=skSolve();
   if(!keepPanel)skPanel();
-  skDrawSvg();skStrip();
+  skSize();skDrawSvg();skStrip();
   document.querySelectorAll('#skModes button').forEach(function(b){b.classList.toggle('on',b.dataset.sm===SK.mode)});
   $('#skUn').disabled=!SK.un.length;$('#skRe').disabled=!SK.re.length;
 }
@@ -2129,6 +2172,7 @@ function skMode(m){
   if((m==='len'||m==='cross'||m==='res')&&!SK.closed){toast(n>=3?'Close the shape first: tap corner 1 or press Close shape':'Draw the plot first: tap the corners');return}
   if(m==='move'&&!n){toast('Draw the corners first');return}
   SK.mode=m;SK.pend=-1;
+  if(m==='res'){SK.vr.z=1;SK.vr.cx=SKW/2;SK.vr.cy=SKH/2}
   if(m==='len'){if(!SK.sel||SK.sel.t==='p')SK.sel=skFirstMissing()||skItems()[0]||null}
   else if(m==='cross'){if(!SK.sel||SK.sel.t!=='c')SK.sel=null}
   else if(m==='move'){if(SK.sel&&SK.sel.t!=='p')SK.sel=null}
@@ -2142,7 +2186,7 @@ function skStep(dir){
 }
 function skCloseShape(){
   if(SK.pts.length<3){toast('Tap at least 3 corners');return}
-  skPush();SK.closed=true;SK.mode='len';SK.sel=skFirstMissing()||skItems()[0]||null;skAfter();skFocus();
+  skPush();SK.closed=true;SK.mode='len';SK.sel=skFirstMissing()||skItems()[0]||null;skAfter();skFitSketch();skPaint();skFocus();
 }
 function skSuggest(){
   var n=SK.pts.length;if(n<4)return;
@@ -2150,12 +2194,7 @@ function skSuggest(){
   skPush();SK.cr=tapeCross(n,b.hub).map(function(c){return[SK.pts[c[0]].id,SK.pts[c[1]].id]});SK.sel=null;skAfter();
   toast('Crosses from corner '+(b.hub+1)+(b.ok?': all stay inside the plot':': check they stay inside your plot'));
 }
-function skFit(){
-  var P=SK.pts;if(!P.length)return;skPush();
-  var xs=P.map(function(p){return p.x}),ys=P.map(function(p){return p.y}),x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),m=70,
-  k=Math.min((SKW-2*m)/((x1-x0)||1),(SKH-2*m)/((y1-y0)||1),4),cx=(x0+x1)/2,cy=(y0+y1)/2;
-  P.forEach(function(p){p.x=SKW/2+(p.x-cx)*k;p.y=SKH/2+(p.y-cy)*k});skAfter();
-}
+function skFit(){skFitView()}
 function skTurn(){
   var P=SK.pts;if(!P.length)return;skPush();
   var cx=0,cy=0;P.forEach(function(p){cx+=p.x;cy+=p.y});cx/=P.length;cy/=P.length;
@@ -2168,7 +2207,7 @@ function skTap(d){
     if(SK.closed){toast('The shape is closed. Use Move to change it');return}
     if(d.ci>=0){if(d.ci===0&&n>=3)skCloseShape();return}
     if(n>=12){toast('Up to 12 corners');return}
-    skPush();SK.pts.push({id:SK.nid++,x:Math.max(16,Math.min(SKW-16,p.x)),y:Math.max(16,Math.min(SKH-16,p.y))});skAfter();
+    skPush();SK.pts.push({id:SK.nid++,x:Math.max(-3000,Math.min(3000,p.x)),y:Math.max(-3000,Math.min(3000,p.y))});skAfter();
   }else if(m==='len'){
     h=skHitItem(p,false);SK.sel=h?h.it:null;skRender();if(h)skFocus();
   }else if(m==='move'){
@@ -2191,15 +2230,33 @@ function skTap(d){
 function skWire(){
   if(SK.wired)return;SK.wired=true;
   var el=document.createElement('div');el.id='skv';
-  el.innerHTML='<div class="skh"><button id="skX" aria-label="Close sketch">✕</button><b>Sketch</b><button id="skUn" aria-label="Undo">↶</button><button id="skRe" aria-label="Redo">↷</button><button id="skMore" aria-label="More">⋯</button></div><div class="sks" id="skStrip"></div><div class="skp" id="skPanel"></div><div id="skCv"><svg id="skSvg" viewBox="0 0 '+SKW+' '+SKH+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Your sketch"></svg></div>'
+  el.innerHTML='<div class="skh"><button id="skX" aria-label="Close sketch">✕</button><b>Sketch</b><button id="skUn" aria-label="Undo">↶</button><button id="skRe" aria-label="Redo">↷</button><button id="skMore" aria-label="More">⋯</button></div><div class="sks" id="skStrip"></div><div class="skp" id="skPanel"></div><div id="skCv"><svg id="skSvg" viewBox="0 0 '+SKW+' '+SKH+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Your sketch"></svg><div id="skZ"><button id="skZi" aria-label="Zoom in">+</button><button id="skZo" aria-label="Zoom out">&minus;</button><button id="skZf" aria-label="Fit the drawing to the screen">&#10530;</button></div></div>'
     +'<div class="skm" id="skModes"><button data-sm="draw"><b>✏️</b>Draw</button><button data-sm="len"><b>📏</b>Sides</button><button data-sm="move"><b>✥</b>Move</button><button data-sm="cross"><b>✂️</b>Crosses</button><button data-sm="res"><b>✅</b>Result</button></div>';
   document.body.appendChild(el);
   var svg=$('#skSvg');
-  svg.addEventListener('pointerdown',function(e){if(!SK.open||SK.mode==='res')return;e.preventDefault();try{svg.setPointerCapture(e.pointerId)}catch(_){}var p=skPt(e);SK.dn={x:p.x,y:p.y,k:p.k,ci:skHitCorner(p),moved:false,pushed:false}});
-  svg.addEventListener('pointermove',function(e){var d=SK.dn;if(!d)return;var p=skPt(e);if(!d.moved&&Math.hypot(p.x-d.x,p.y-d.y)*p.k>8)d.moved=true;
-    if(d.moved&&d.ci>=0&&(SK.mode==='draw'||SK.mode==='move')){if(!d.pushed){skPush();d.pushed=true}var q=SK.pts[d.ci];q.x=Math.max(14,Math.min(SKW-14,p.x));q.y=Math.max(14,Math.min(SKH-14,p.y));skDrawSvg();skStrip()}});
-  svg.addEventListener('pointerup',function(){var d=SK.dn;SK.dn=null;if(!d)return;if(d.moved){if(d.pushed)skAfter();return}skTap(d)});
-  svg.addEventListener('pointercancel',function(){SK.dn=null});
+  svg.addEventListener('pointerdown',function(e){
+    if(!SK.open)return;e.preventDefault();try{svg.setPointerCapture(e.pointerId)}catch(_){}
+    SK.ptr[e.pointerId]={x:e.clientX,y:e.clientY};
+    if(Object.keys(SK.ptr).length>=2){skGestStart();return}
+    var p=skPt(e);SK.dn={x:p.x,y:p.y,k:p.k,ci:SK.mode==='res'?-1:skHitCorner(p),moved:false,pushed:false,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY}});
+  svg.addEventListener('pointermove',function(e){
+    if(SK.ptr[e.pointerId])SK.ptr[e.pointerId]={x:e.clientX,y:e.clientY};
+    if(SK.gest){skGestMove();return}
+    var d=SK.dn;if(!d)return;
+    if(!d.moved&&Math.hypot(e.clientX-d.sx,e.clientY-d.sy)>8)d.moved=true;
+    if(!d.moved)return;
+    if(d.ci>=0&&(SK.mode==='draw'||SK.mode==='move')){var p=skPt(e);if(!d.pushed){skPush();d.pushed=true}var q=SK.pts[d.ci];q.x=Math.max(-3000,Math.min(3000,p.x));q.y=Math.max(-3000,Math.min(3000,p.y));skDrawSvg();skStrip()}
+    else{var v=skV(),k=skBase().k*v.z;v.cx-=(e.clientX-d.lx)/k;v.cy-=(e.clientY-d.ly)/k;d.lx=e.clientX;d.ly=e.clientY;skPaint()}});
+  var pend=function(e){
+    delete SK.ptr[e.pointerId];
+    if(SK.gest){if(!Object.keys(SK.ptr).length){SK.gest=false;SK.dn=null}return}
+    var d=SK.dn;SK.dn=null;if(!d)return;
+    if(d.moved||e.type==='pointercancel'){if(d.pushed)skAfter();return}
+    skTap(d)};
+  svg.addEventListener('pointerup',pend);svg.addEventListener('pointercancel',pend);
+  svg.addEventListener('wheel',function(e){e.preventDefault();var u=skUnits(e.clientX,e.clientY);skZoomAt(u.x,u.y,Math.exp(-e.deltaY*0.002))},{passive:false});
+  $('#skZi').onclick=function(){skZoomAt(SKW/2,SKH/2,1.5)};$('#skZo').onclick=function(){skZoomAt(SKW/2,SKH/2,1/1.5)};$('#skZf').onclick=skFitView;
+  window.addEventListener('resize',function(){if(SK.open)skPaint()});
   $('#skX').onclick=skShut;$('#skUn').onclick=skUndo;$('#skRe').onclick=skRedo;$('#skMore').onclick=skMore;
   document.querySelectorAll('#skModes button').forEach(function(b){b.onclick=function(){skMode(b.dataset.sm)}});
 }
@@ -2208,10 +2265,10 @@ function skMore(){
   $('#mOk').onclick=closeSheet;
   $('#mTurn').onclick=function(){closeSheet();skTurn()};$('#mFit').onclick=function(){closeSheet();skFit()};
   $('#mSug').onclick=function(){closeSheet();skSuggest()};$('#mClr').onclick=function(){closeSheet();skPush();SK.cr=[];SK.sel=null;skAfter()};
-  $('#mNew').onclick=function(){closeSheet();choose('Start a new sketch?','The drawing and all lengths in this sketch will be erased.',[{label:'Erase',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(!ok)return;skPush();SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.sel=null;SK.mode='draw';skAfter()})};
+  $('#mNew').onclick=function(){closeSheet();choose('Start a new sketch?','The drawing and all lengths in this sketch will be erased.',[{label:'Erase',val:true,cls:'danger'},{label:'Keep',val:false}]).then(function(ok){if(!ok)return;skPush();SK.pts=[];SK.closed=false;SK.cr=[];SK.L={};SK.sel=null;SK.mode='draw';skAfter();skFitSketch();skPaint()})};
 }
 function skOpen(){
-  skWire();skLoad();SK.open=true;$('#skv').style.display='flex';document.body.style.overflow='hidden';skRender();
+  skWire();skLoad();SK.open=true;SK.ptr={};SK.gest=false;$('#skv').style.display='flex';document.body.style.overflow='hidden';skSize();skRender();skViewReset();skPaint();
 }
 function skShut(){
   if(!SK.open)return;SK.open=false;skStore();$('#skv').style.display='none';document.body.style.overflow='';

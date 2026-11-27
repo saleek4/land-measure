@@ -22,9 +22,12 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   const page = await ctx.newPage(); const errs = []; page.on('pageerror', e => errs.push(String(e))); page.on('console', m => { if (m.type() === 'error' && !/fetching the script/.test(m.text())) errs.push('console: ' + m.text()); });
   await page.goto('http://localhost:8796/'); await page.waitForTimeout(400);
   const draft = () => page.evaluate(() => JSON.parse(localStorage.getItem('lm.draft.v1') || '{"corners":[]}'));
-  const scr = async (x, y) => { const r = await page.$eval('#skSvg', e => { const q = e.getBoundingClientRect(); return { l: q.left, t: q.top, w: q.width, h: q.height }; }); const k = Math.min(r.w / 360, r.h / 520); return { x: r.l + (r.w - 360 * k) / 2 + x * k, y: r.t + (r.h - 520 * k) / 2 + y * k }; };
+  // while the sketch is still in its first view (not zoomed, not fitted) a point (x, y) is x, y pixels from the top left of the canvas
+  const scr = async (x, y) => { const r = await page.$eval('#skSvg', e => { const q = e.getBoundingClientRect(); return { l: q.left, t: q.top }; }); return { x: r.l + x, y: r.t + y }; };
   const tap = async (x, y) => { const p = await scr(x, y); await page.mouse.click(p.x, p.y); await page.waitForTimeout(40); };
-  const tapC = async (i) => { await tap(drawn[i][0], drawn[i][1]); };
+  // where corner i is on the screen now (after the picture was fitted or zoomed)
+  const cpos = async (i) => page.$eval('#skSvg circle[data-c="' + i + '"]', e => { const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  const tapC = async (i) => { const p = await cpos(i); await page.mouse.click(p[0], p[1]); await page.waitForTimeout(40); };
   const drag = async (a, b2) => { const p = await scr(a[0], a[1]), q = await scr(b2[0], b2[1]); await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.mouse.move((p.x + q.x) / 2, (p.y + q.y) / 2, { steps: 4 }); await page.mouse.move(q.x, q.y, { steps: 4 }); await page.mouse.up(); await page.waitForTimeout(60); };
   const mode = async (m) => { await page.click('#skModes [data-sm="' + m + '"]'); await page.waitForTimeout(80); };
   const sk = async () => (await draft()).sk || { pts: [], closed: false, cr: [], L: {} };
@@ -44,7 +47,7 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   ok((await page.$eval('#skUn', e => e.disabled)) && (await page.$eval('#skRe', e => e.disabled)), 'Undo and Redo are off on a blank sketch');
 
   // ---- draw: 8 corners round the plot (clockwise on the screen order of the list reversed below in test 2)
-  for (let i = 0; i < 8; i++) await tapC(i);
+  for (let i = 0; i < 8; i++) await tap(drawn[i][0], drawn[i][1]);
   ok(await nPts() === 8, '8 taps make 8 corners');
   ok(await page.$eval('#skCl', e => !e.disabled), 'Close shape is on');
   // undo / redo
@@ -61,9 +64,39 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   await tapC(0); await page.waitForTimeout(100);
   ok((await sk()).closed, 'tapping corner 1 closes the shape');
   ok(/Side 1/.test(await page.innerText('#skPanel')), 'after closing it asks for side 1 first');
+
+  // ---- zoom and move: the drawing itself must not change
+  const cv = await page.$eval('#skSvg', e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
+  const inCv = p => p[0] >= cv[0] && p[0] <= cv[0] + cv[2] && p[1] >= cv[1] && p[1] <= cv[1] + cv[3];
+  let allIn = true; for (let i = 0; i < 8; i++) allIn = allIn && inCv(await cpos(i));
+  ok(allIn, 'closing the shape fits the whole drawing on the screen');
+  const stored0 = JSON.stringify((await sk()).pts);
+  const g0 = [await cpos(0), await cpos(1)], gd = (a, b2) => Math.hypot(a[0] - b2[0], a[1] - b2[1]);
+  await page.mouse.move(cv[0] + cv[2] / 2, cv[1] + cv[3] / 2); await page.mouse.wheel(0, -400); await page.waitForTimeout(80);
+  const g1 = [await cpos(0), await cpos(1)];
+  ok(gd(g1[0], g1[1]) > 1.3 * gd(g0[0], g0[1]), 'wheel zoom in makes the picture bigger (' + gd(g0[0], g0[1]).toFixed(0) + ' to ' + gd(g1[0], g1[1]).toFixed(0) + ' px)');
+  ok(await page.$eval('#skSvg circle[data-c="0"]', e => e.getAttribute('r')) === '14', 'corner circles keep the same size when zoomed');
+  await page.click('#skZo'); await page.click('#skZi'); await page.waitForTimeout(50);
+  // move with one finger on empty space
+  const e0 = await cpos(0); await page.mouse.move(cv[0] + 12, cv[1] + cv[3] - 12); await page.mouse.down(); await page.mouse.move(cv[0] + 12 + 40, cv[1] + cv[3] - 12 - 30, { steps: 5 }); await page.mouse.up(); await page.waitForTimeout(60);
+  const e1 = await cpos(0);
+  ok(Math.abs((e1[0] - e0[0]) - 40) < 6 && Math.abs((e1[1] - e0[1]) + 30) < 6, 'dragging empty space moves the picture (' + (e1[0] - e0[0]).toFixed(0) + ', ' + (e1[1] - e0[1]).toFixed(0) + ')');
+  // two fingers: pinch to zoom
+  const cdp = await ctx.newCDPSession(page); await page.click('#skZf'); await page.waitForTimeout(60);
+  const p0 = [await cpos(0), await cpos(1)], mx = cv[0] + cv[2] / 2, my = cv[1] + cv[3] / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mx - 40, y: my, id: 1 }, { x: mx + 40, y: my, id: 2 }] });
+  for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: mx - 40 - i * 10, y: my, id: 1 }, { x: mx + 40 + i * 10, y: my, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(80);
+  const p1 = [await cpos(0), await cpos(1)];
+  ok(gd(p1[0], p1[1]) > 1.5 * gd(p0[0], p0[1]), 'pinching with two fingers zooms (' + gd(p0[0], p0[1]).toFixed(0) + ' to ' + gd(p1[0], p1[1]).toFixed(0) + ' px)');
+  ok(await nPts() === 8, 'a pinch does not add or remove corners');
+  await page.click('#skZf'); await page.waitForTimeout(60);
+  const g2 = [await cpos(0), await cpos(1)];
+  ok(gd(g2[0], g0[0]) < 3 && gd(g2[1], g0[1]) < 3, 'the Fit button brings the whole drawing back');
+  ok(JSON.stringify((await sk()).pts) === stored0, 'zooming and moving did not change the drawing');
   // insert a corner on a side (Move, after closing) and delete it again
-  await mode('move'); const mid = [(drawn[0][0] + drawn[1][0]) / 2, (drawn[0][1] + drawn[1][1]) / 2];
-  await tap(mid[0], mid[1]); ok(await nPts() === 9, 'tapping a side in Move adds a corner there');
+  await mode('move'); const c0p = await cpos(0), c1p = await cpos(1);
+  await page.mouse.click((c0p[0] + c1p[0]) / 2, (c0p[1] + c1p[1]) / 2); await page.waitForTimeout(40); ok(await nPts() === 9, 'tapping a side in Move adds a corner there');
   ok(await page.$('#skDel') !== null, 'the new corner is selected and can be deleted');
   await page.click('#skDel'); await page.waitForTimeout(60);
   let n = await nPts();
@@ -169,9 +202,25 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
   await mode('res'); await page.waitForTimeout(100);
   ok(Math.abs(await bigArea() - shoe(tri) / CENT) < 0.02, 'a triangle works with only its 3 sides');
   // delete a corner below 3 is refused
-  await mode('move'); await tap(td[0][0], td[0][1]); await page.waitForTimeout(80);
+  await mode('move'); await tapC(0); await page.waitForTimeout(80);
   if (await page.$('#skDel')) { await page.click('#skDel'); await page.waitForTimeout(80); }
   ok(await nPts() === 3, 'a plot cannot have fewer than 3 corners');
+
+  // ---- small sides: corners that are very close on the paper need a zoom first
+  await page.click('#skMore'); await page.waitForSelector('#mNew'); await page.click('#mNew'); await page.waitForSelector('#sheet button.danger'); await page.click('#sheet button.danger'); await page.waitForTimeout(150);
+  for (const q of [[200, 120], [240, 150], [240, 400], [140, 395], [138, 190]]) await tap(q[0], q[1]);
+  await tap(190, 170); await tap(196, 164);
+  ok(await nPts() === 6, 'two corners a few pixels apart cannot be told apart: the second tap is ignored');
+  const cv2 = await page.$eval('#skSvg', e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
+  const at = await cpos(5);
+  await page.mouse.move(at[0], at[1]); await page.mouse.wheel(0, -700); await page.waitForTimeout(100);
+  const at2 = await cpos(5);
+  await page.mouse.click(at2[0] + 45, at2[1] + 12); await page.waitForTimeout(40); await page.mouse.click(at2[0] + 80, at2[1] + 26); await page.waitForTimeout(40);
+  const k8 = await sk();
+  ok(k8.pts.length === 8, 'after zooming in the two close corners can be placed (' + k8.pts.length + ' corners)');
+  const wd = Math.hypot(k8.pts[6][0] - k8.pts[5][0], k8.pts[6][1] - k8.pts[5][1]);
+  ok(wd < 28, 'they are closer on the drawing than the old tap limit (' + wd.toFixed(0) + ' units)');
+  await page.screenshot({ path: TH.shot('sk_small.png') });
   await page.click('#skX');
 
   ok(errs.length === 0, 'no JS errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
