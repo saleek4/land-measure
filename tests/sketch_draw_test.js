@@ -37,7 +37,7 @@ const crs = [[0, 2], [2, 4], [4, 6], [0, 6], [0, 4]];
 
   // ---- Home: three big ways to start, all visible without scrolling
   const vis = async (sel) => page.$eval(sel, e => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight - 60; }).catch(() => false);
-  ok(await vis('#bSketch') && await vis('#bCap') && await vis('#bToMap'), 'Home: Sketch, GPS and Map are all visible without scrolling on a 390x844 phone');
+  ok((await Promise.all(['#bNewPlot', '#bPlanPhoto', '#bTape', '#bCap', '#bToMap', '#bSketch'].map(s => page.$(s)))).every(Boolean) && await vis('#bNewPlot'), 'Home: Plots, Plan, GPS, Measure and Sketch each have their New button (the first is on the first screen)');
   ok(/Home/.test(await page.innerText('nav button[data-tab=measure]')), 'bottom tab is called Home');
   ok(/How do you want to measure/.test(await page.innerText('.next')), 'Home tells you what to do first');
 

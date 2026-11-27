@@ -56,6 +56,8 @@ label.fb{display:block;text-align:center;font-weight:600;font-size:16px;border-r
 .skm button{flex:1;padding:7px 2px;font-size:12.5px;background:transparent;color:var(--mut)}.skm button b{display:block;font-size:21px;line-height:1.15}.skm button.on{color:var(--acc);background:var(--soft)}
 .gh{font-size:15px;margin:0 0 8px}.next{margin:2px 2px 10px;padding:10px 12px;background:var(--soft);border-radius:12px;font-size:14.5px;line-height:1.4}
 button.optp{border:2px solid var(--acc);background:var(--soft)}
+.hsh{display:flex;align-items:center;gap:8px;margin:0 0 6px}.hsh b{font-size:16px}.hsh .hsv{margin-left:auto;width:auto;margin-top:0;padding:5px 8px}.hsh .sm{margin-left:auto;padding:8px 14px;font-size:14px}.hs button.opt:first-of-type{margin-top:2px}
+.kchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.kchips button{padding:7px 12px;font-size:14px;border-radius:999px}.kchips button.on{background:var(--acc);color:var(--accInk)}
 .hpl{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;background:var(--card);border:1px solid var(--line);font-weight:400}.hpl b{display:block;font-size:16px}.hpl small{display:block;color:var(--mut);font-size:13px}.hpl .hpa{font-weight:800;font-size:18px;text-align:right;white-space:nowrap}.hpl .hpa small{display:inline;font-size:13px;font-weight:600}
 .nm{display:flex;gap:8px;padding:10px}.nm input{flex:1;min-width:0}
 .sumc{display:flex;align-items:center;gap:12px;justify-content:space-between}.sumc button{flex:0 0 auto;padding:14px 20px}
@@ -2797,6 +2799,42 @@ document.addEventListener('click',function(e){
 document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){leaveModes();S.tab=b.dataset.tab;S.viewId=null;M.view=null;render()}});
 
 function canMRedo(){var r=M.mrdo&&M.mrdo[M.mrdo.length-1];if(r&&r.len===S.draft.corners.length)return true;M.mrdo=[];return false}
+// how a saved plot was made: sketch, plan (tape lengths), map (satellite points) or gps
+function plotKind(p){return p.tape&&p.tape.sk?'sketch':p.src==='tape'?'plan':p.src==='map'?'map':'gps'}
+function kindCount(k){return S.plots.filter(function(p){return plotKind(p)===k}).length}
+function savedLink(k){var c=kindCount(k);return c?'<button class="lnk hsv" data-kind="'+k+'">'+c+' saved &rsaquo;</button>':'<span class="mut small" style="margin-left:auto">none saved yet</span>'}
+function secCard(ic,title,kind,body){return'<div class="card hs"><div class="hsh"><span>'+ic+'</span><b>'+title+'</b>'+savedLink(kind)+'</div>'+body+'</div>'}
+// "+ New plot": pick how to measure; a plot that is not saved yet is saved or thrown away first
+function newPlotSheet(){
+  var d=S.draft;if(S.cap||S.walk){toast('Finish or cancel the GPS reading first');return}
+  var sk0=d.sk&&d.sk.pts&&d.sk.pts.length;
+  sheet('<h3>New plot</h3><div class="mut">How do you want to measure it?</div>'
+    +'<button class="opt" data-m="sk"><span class="ic">&#9999;&#65039;</span><span><b>Sketch</b><small>Draw it by hand, type each tape length.</small></span></button>'
+    +'<button class="opt" data-m="photo"><span class="ic">&#128247;</span><span><b>Photo of the paper plan</b><small>The sketch is made from the photo.</small></span></button>'
+    +'<button class="opt" data-m="gps"><span class="ic">&#128205;</span><span><b>GPS on the land</b><small>Stand on each corner, or walk the boundary.</small></span></button>'
+    +'<button class="opt" data-m="map"><span class="ic">&#128752;&#65039;</span><span><b>Satellite map</b><small>Tap the corners on the map. No GPS needed.</small></span></button>'
+    +'<button class="opt" data-m="tape"><span class="ic">&#128208;</span><span><b>Tape lengths in a list</b><small>Type the sides and crosses.</small></span></button>'
+    +'<div class="row" style="margin-top:10px"><button id="npX">Cancel</button></div>');
+  $('#npX').onclick=closeSheet;
+  $('#sheet').onclick=function(e){var b=e.target.closest('button[data-m]');if(!b)return;var m=b.dataset.m;closeSheet();
+    var start=function(){
+      if(m==='sk')skOpen();
+      else if(m==='photo'){skOpen();skPhotoSheet()}
+      else if(m==='tape'){S.tab='measure';render();tapeSheet()}
+      else if(m==='map'){M.refit=true;S.tab='map';render()}
+      else{S.tab='measure';render();var g=document.querySelector('#bCap,#bWalk');if(g&&g.scrollIntoView)g.scrollIntoView({block:'center'})}
+    };
+    var an=anOf(d);
+    if(!d.corners.length&&!sk0){start();return}
+    var o=[];if(an&&d.corners.length>=3)o.push({label:'Save it, then start new',val:'s',cls:'pri'});
+    o.push({label:'Throw it away',val:'t',cls:'danger'});o.push({label:'Keep working on it',val:'k'});
+    choose('Start a new plot?','The plot you are working on is not saved yet.',o).then(function(v){
+      if(v==='k'||v===undefined)return;
+      if(v==='s'){S.plots.unshift(buildPlot(d));savePlots()}
+      S.draft=blankDraft(d.mode);saveDraft();M.mrdo=[];M.ring=-1;gcPhotos();start();
+    });
+  };
+}
 function renderMeasure(){
   if(S.tab!=='measure')return;
   var d=S.draft,n=d.corners.length,an=anOf(d),busy=!!(S.cap||S.walk);
@@ -2806,7 +2844,7 @@ function renderMeasure(){
   var mmcard='<div class="card" id="mmCard" style="padding:0;overflow:hidden"><div style="position:relative"><canvas id="mmc" aria-label="Satellite map of your corners"></canvas><button class="mmg" id="mmGps">&#128205; Show where I am</button></div><div id="mmInfo" class="small" style="padding:8px 12px"></div></div>';
   var sum='';
   if(an&&!busy)sum='<div class="card sumc"><div><div class="sumn">'+fa(an.net,u0)+' <small>'+UNIT[u0].l+'</small></div><div class="mut small">'+n+' points &middot; error about ±'+(an.rel*100).toFixed(1)+'%</div></div><button class="pri" id="bSave">Save plot</button></div>';
-  var gps='<div class="card"><div class="gh">&#128205; <b>Use GPS on the land</b></div><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Corner points</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk boundary</button></div>';
+  var gps='<div class="card"><div class="gh hsh">&#128205; <b>Use GPS on the land</b>'+(busy?'':savedLink('gps'))+'</div><div class="seg" style="margin:0 0 10px"><button data-mode="corners" class="'+(d.mode==='corners'?'on':'')+'"'+(busy?' disabled':'')+'>Corner points</button><button data-mode="walk" class="'+(d.mode==='walk'?'on':'')+'"'+(busy?' disabled':'')+'>Walk boundary</button></div>';
   if(d.mode==='corners'){
     if(S.cap){
       var idx=S.cap.replace>=0?S.cap.replace+1:n+1;
@@ -2824,23 +2862,26 @@ function renderMeasure(){
     }
   }
   gps+='</div>';
-  var tSk=busy?'':'<button id="bSketch" class="opt optp"><span class="ic">&#9999;&#65039;</span><span><b>Draw a sketch</b><small>'+(sk0?'Continue your sketch ('+d.sk.pts.length+' corners)':'Draw it by hand or from a photo of the plan. Type each tape length.')+'</small></span></button>';
+  var tSk=busy?'':'<button id="bSketch" class="opt optp"><span class="ic">&#9999;&#65039;</span><span><b>'+(sk0?'Continue your sketch':fresh?'New sketch':'Draw a sketch')+'</b><small>'+(sk0?d.sk.pts.length+' corners drawn. Tap to carry on.':'Draw it by hand, then type each tape length.')+'</small></span></button>';
   var tMap=busy?'':'<button id="bToMap" class="opt"><span class="ic">&#128752;&#65039;</span><span><b>'+(n?'View on satellite map':'Mark on satellite map')+'</b><small>'+(n?'See, drag and edit the corners.':'Tap the corners on the map. No GPS needed.')+'</small></span></button>';
   var tTape=busy?'':'<button id="bTape" class="lnk">Type lengths in a list instead (old way)</button>';
+  var tTapeNew=busy?'':'<button id="bTape" class="opt"><span class="ic">&#128208;</span><span><b>New tape plan</b><small>Type the side and cross lengths in a list.</small></span></button>';
   var tFld=(!busy&&d.mode==='corners'&&n>=3&&n<=12)?'<button id="bField" class="opt"><span class="ic">&#129517;</span><span><b>Field plan</b><small>Check this draft on the ground with a tape.</small></span></button>':'';
-  var rec='';
-  if(fresh&&S.plots.length){
-    rec='<div class="gh" style="margin:18px 4px 6px"><b>Your saved plots</b> <span class="mut small">('+S.plots.length+')</span></div>'+S.plots.slice(0,3).map(function(p){return'<button class="hpl" data-id="'+p.id+'"><span><b>'+esc(p.name)+'</b><small>'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</small></span><span class="hpa">'+fa(p.area,u0)+' <small>'+UNIT[u0].l+'</small></span></button>'}).join('')+(S.plots.length>3?'<button id="hplAll" class="lnk">See all plots</button>':'');
-  }
+  var hplRow=function(p){return'<button class="hpl" data-id="'+p.id+'"><span><b>'+esc(p.name)+'</b><small>'+esc(p.place||'No place')+' · '+fdate(p.ts)+'</small></span><span class="hpa">'+fa(p.area,u0)+' <small>'+UNIT[u0].l+'</small></span></button>'};
+  var secPlots='<div class="card hs"><div class="hsh">&#128193; <b>Plots</b> <span class="mut small">('+S.plots.length+' saved)</span><button class="pri sm" id="bNewPlot">+ New plot</button></div>'+(S.plots.length?S.plots.slice(0,2).map(hplRow).join('')+(S.plots.length>2?'<button id="hplAll" class="lnk">See all '+S.plots.length+' plots</button>':''):'<div class="mut small">No saved plots yet. Press + New plot, or pick a way below.</div>')+'</div>';
+  var secPlan=secCard('&#129517;','Plan','plan','<button id="bPlanPhoto" class="opt"><span class="ic">&#128247;</span><span><b>New plan from a photo</b><small>Photo of your paper plan. The sketch is made for you.</small></span></button>'+tTapeNew);
+  var secMeasure=secCard('&#128207;','Measure','map',tMap);
+  var secSketch=secCard('&#9999;&#65039;','Sketch','sketch',tSk+(sk0?'<button id="bSketchNew" class="lnk">Start a new sketch instead</button>':''));
+  var newBtn=busy?'':'<button id="bNewPlot" class="lnk" style="margin:0 0 8px">+ New plot (start again)</button>';
   var res='';
   if(an&&!busy)res='<div class="card" style="margin-top:12px"><h2>Result</h2>'+resultHTML(an,d.mode,true,d)+'<button id="bRec" style="width:100%;margin-top:10px">&#128203; '+(d.rec?'Change record area':'Compare with record area')+'</button><label>Notes (optional)</label><input id="fNotes" value="'+esc(d.notes)+'" placeholder="e.g. east side near road, tree cover" autocomplete="off"></div>';
-  var nxt=fresh?'<div class="next"><b>How do you want to measure?</b> Pick one of the three. You can save the plot after.</div>'
+  var nxt=fresh?'<div class="next"><b>How do you want to measure?</b> Pick one below. You can save the plot after.</div>'
     :busy?''
     :(an?'<div class="next">&#9989; <b>Area is ready.</b> Press <b>Save plot</b> to keep it. To fix a corner, open the satellite map.</div>'
     :'<div class="next">&#128073; <b>Next:</b> '+(n?'add corner '+(n+1)+'. You need at least 3 corners to get the area.':'start measuring.')+'</div>');
   var h;
-  if(fresh)h=nmc+nxt+tSk+gps+tMap+rec+mmcard+tTape;
-  else h=nmc+nxt+mmcard+sum+gps+(busy?'':'<div class="opts">'+tSk+tMap+tFld+'</div>'+tTape)+res;
+  if(fresh)h=nmc+nxt+secPlots+secPlan+gps+secMeasure+secSketch+mmcard;
+  else h=nmc+nxt+newBtn+mmcard+sum+gps+(busy?'':'<div class="opts">'+tSk+tMap+tFld+'</div>'+tTape)+res;
   $('#app').innerHTML=h;
   M.mm=$('#mmc');M.mmRaf=0;
   $('#mmc').onclick=function(){M.refit=true;S.tab='map';render()};
@@ -2864,7 +2905,11 @@ function renderMeasure(){
   document.querySelectorAll('.corners button').forEach(function(b){b.onclick=function(){var i=+b.dataset.c;choose('Corner '+(i+1),(placed(d.corners[i])?'Placed without GPS, about ±':'Accuracy ±')+fl(d.corners[i].acc,1)+(placed(d.corners[i])?'.':' from '+d.corners[i].n+' readings.'),[{label:'Retake',val:'r',cls:'pri'},{label:'Delete',val:'d',cls:'danger'},{label:'Cancel',val:'c'}]).then(function(v){if(v==='r')startCapture(i);else if(v==='d'){d.corners.splice(i,1);saveDraft();renderMeasure();gcPhotos()}})}});
   if(q('#bSketch'))q('#bSketch').onclick=skOpen;
   document.querySelectorAll('.hpl').forEach(function(b){b.onclick=function(){S.viewId=b.dataset.id;S.tab='plots';render()}});
-  if(q('#hplAll'))q('#hplAll').onclick=function(){S.viewId=null;S.tab='plots';render()};
+  if(q('#hplAll'))q('#hplAll').onclick=function(){S.viewId=null;S.kind='';S.filter='';S.tab='plots';render()};
+  document.querySelectorAll('.hsv[data-kind]').forEach(function(b){b.onclick=function(){S.kind=b.dataset.kind;S.viewId=null;S.filter='';S.tab='plots';render();window.scrollTo(0,0)}});
+  if(q('#bNewPlot'))q('#bNewPlot').onclick=newPlotSheet;
+  if(q('#bPlanPhoto'))q('#bPlanPhoto').onclick=function(){skOpen();skPhotoSheet()};
+  if(q('#bSketchNew'))q('#bSketchNew').onclick=function(){choose('Start a new sketch?','Your sketch ('+d.sk.pts.length+' corners) will be removed from this draft.',[{label:'Start new',val:true,cls:'danger'},{label:'Keep it',val:false}]).then(function(ok){if(ok){d.sk=null;saveDraft();gcPhotos();skOpen()}})};
   if(q('#bWalk'))q('#bWalk').onclick=startWalk;
   if(q('#bWalkEnd'))q('#bWalkEnd').onclick=finishWalk;
   if(q('#bWalkCancel'))q('#bWalkCancel').onclick=cancelWalk;
@@ -2891,9 +2936,11 @@ function savePlot(){
 
 function renderPlots(){
   if(S.viewId){var p=S.plots.filter(function(x){return x.id===S.viewId})[0];if(p)return renderDetail(p);S.viewId=null}
-  var f=S.filter.toLowerCase(),list=S.plots.filter(function(p){return!f||(p.name+' '+p.place).toLowerCase().indexOf(f)>=0});
-  var h=backupCard()+'<div class="card"><input id="fSearch" placeholder="Search by name or place" value="'+esc(S.filter)+'" autocomplete="off"></div>';
-  if(!S.plots.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">No saved plots yet. Measure one on the first tab.</div>';
+  var kd=S.kind||'',f=S.filter.toLowerCase(),list=S.plots.filter(function(p){return(!f||(p.name+' '+p.place).toLowerCase().indexOf(f)>=0)&&(!kd||plotKind(p)===kd)});
+  var chips='<div class="kchips">'+[['','All'],['sketch','Sketch'],['gps','GPS'],['map','Map'],['plan','Plan']].map(function(k){return'<button data-k="'+k[0]+'" class="'+(kd===k[0]?'on':'')+'">'+k[1]+' '+(k[0]?kindCount(k[0]):S.plots.length)+'</button>'}).join('')+'</div>';
+  var h=backupCard()+'<div class="card"><input id="fSearch" placeholder="Search by name or place" value="'+esc(S.filter)+'" autocomplete="off"><button class="pri" id="pNew" style="width:100%;margin-top:8px">+ New plot</button></div>'+chips;
+  if(!S.plots.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">No saved plots yet. Press + New plot.</div>';
+  else if(!list.length)h+='<div class="mut" style="padding:20px 8px;text-align:center">'+(kd?'No '+kd+' plots here.':'Nothing matches.')+'</div>';
   list.forEach(function(p){
     h+='<button class="plotitem" data-id="'+p.id+'"><b>'+esc(p.name)+'</b><div class="mut small">'+esc(p.place||'No place')+' · '+fdate(p.ts)+(p.src&&p.src!=='gps'?' · '+methLabel(p.src):'')+'</div><div style="margin-top:6px;font-weight:700">'+fa(p.area,S.settings.unit)+' '+UNIT[S.settings.unit].l+' <span class="mut small" style="font-weight:400">('+fa(p.area,S.settings.unit==='acre'?'cent':'acre')+' '+UNIT[S.settings.unit==='acre'?'cent':'acre'].l+')</span></div></button>';
   });
@@ -2901,6 +2948,8 @@ function renderPlots(){
   if($('#bNow'))$('#bNow').onclick=function(){backupNow(function(){toast('Backup saved. Keep that file safe');renderPlots()})};
   if($('#bSign'))$('#bSign').onclick=function(){S.tab='more';render()};
   if($('#bSyncNow'))$('#bSyncNow').onclick=function(){syncNow()};
+  if($('#pNew'))$('#pNew').onclick=newPlotSheet;
+  document.querySelectorAll('.kchips button').forEach(function(b){b.onclick=function(){S.kind=b.dataset.k;renderPlots()}});
   var s=$('#fSearch');if(s)s.oninput=function(){S.filter=this.value;var pos=this.selectionStart;renderPlots();var n=$('#fSearch');n.focus();n.setSelectionRange(pos,pos)};
   document.querySelectorAll('.plotitem').forEach(function(b){b.onclick=function(){S.viewId=b.dataset.id;renderPlots();window.scrollTo(0,0)}});
 }
