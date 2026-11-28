@@ -161,6 +161,7 @@ body.maptab #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 .mcard .stp b{flex:1;text-align:center;font-size:14px}
 .mcard .stp button{flex:0 0 46px;padding:8px 0}
 .mcard .row button{white-space:nowrap;padding:12px 6px}
+.mcard.mvp{padding:8px}.mcard.mvp .row{gap:4px;margin-top:0}.mcard.mvp .chips,.mcard.mvp .chips+.row{margin-top:6px}.mcard.mvp .row button{padding:11px 0;font-size:15px;min-width:0}.mcard.mvp .chips{margin-bottom:0}
 .mcard .seg2{display:flex;gap:5px;margin-top:8px}.mcard .seg2 button{flex:1;padding:9px 2px;font-size:13px}
 .mcard button.on{background:#1f7a4d;color:#fff}
 .mcard input[type=text]{background:#f4f6f3;color:#16211a;border:1px solid #dfe5df;margin-top:8px;padding:9px 10px}
@@ -1306,7 +1307,7 @@ function mapPanel(C,mode,an,o){
     if(k>=2){var a2=analyze(A.concat([pin]),M.ring>=0?'corners':mode,M.ring>=0?null:holesOf(o));if(a2)line+=' &rarr; '+fa(a2.net,u)+' '+UNIT[u].l+', perimeter '+fmtLen(a2.per)}
     h+='<div class="c">'+line+'</div>';
   }
-  if(M.mv)h+='<div class="c">Drag to move the whole plot. Pinch or two fingers to move the map.</div>';
+  if(M.mv)h='<div class="c" style="margin:0;font-size:13px">Drag the plot. Two fingers move the map.</div>';
   if(h!==M.lastPanel){M.lastPanel=h;el.innerHTML=h}
 }
 
@@ -1345,7 +1346,7 @@ function mapRedo(){
   saveDraft();M.lastPanel='';mapBottom();scheduleDraw();gcPhotos();return true;
 }
 function mapUndo(){
-  var A=act();if(editUndo())return;
+  var A=act();if(mvUndo())return;if(editUndo())return;
   var before=JSON.stringify(A),uf=M.undoFit;
   if(uf&&uf.arr===A&&A[uf.i]&&A[uf.i].lat===uf.lat&&A[uf.i].lon===uf.lon){A[uf.i]=uf.prev;M.undoFit=null;rdoPush(A,before,'fit',uf);M.sel=-1;saveDraft();M.lastPanel='';mapBottom();scheduleDraw();return}
   var ud=M.undoDraw,kind='pop';
@@ -1468,7 +1469,20 @@ function bindEdit(el){
     q('#eDel').onclick=function(){editSnap(A);A.splice(e.i,1);M.edit=null;M.sel=-1;editDone(A)};
   }
 }
-function shiftMetres(dx,dy){var o=S.draft,c0=o.corners[0],r=radii(c0.lat),cs=Math.cos(c0.lat*DEG);allRings(o).forEach(function(ring){ring.forEach(function(p){p.lon+=dx/(r.N*cs)/DEG;p.lat+=dy/r.M/DEG})});saveDraft();M.lastPanel='';scheduleDraw()}
+// undo for moving / turning the whole plot (outer ring + holes); valid only while the plot still equals the entry's 'after'
+function geoStr(){var d=S.draft;return JSON.stringify({c:d.corners,h:holesOf(d)})}
+function mvSnap(){M.mvstk=M.mvstk||[];M.mvstk.push({d:S.draft,snap:geoStr(),after:''});if(M.mvstk.length>60)M.mvstk.shift()}
+function mvBtn(){var b=$('#mvU');if(b)b.disabled=!mvCan()}
+function mvDone(){var t=M.mvstk&&M.mvstk[M.mvstk.length-1];if(t)t.after=geoStr();mvBtn()}
+function mvCan(){var t=M.mvstk&&M.mvstk[M.mvstk.length-1];return!!(t&&t.d===S.draft&&t.after&&t.after===geoStr())}
+function mvUndo(){
+  if(!mvCan())return false;
+  var t=M.mvstk.pop(),o=JSON.parse(t.snap),d=S.draft;
+  d.corners.splice.apply(d.corners,[0,d.corners.length].concat(o.c));
+  (d.holes||[]).forEach(function(hh,i){var r=hh.corners;if(o.h[i]&&r)r.splice.apply(r,[0,r.length].concat(o.h[i]))});
+  M.sel=-1;saveDraft();M.lastPanel='';scheduleDraw();mvBtn();toast('Move undone');return true;
+}
+function shiftMetres(dx,dy){var o=S.draft,c0=o.corners[0],r=radii(c0.lat),cs=Math.cos(c0.lat*DEG);mvSnap();allRings(o).forEach(function(ring){ring.forEach(function(p){p.lon+=dx/(r.N*cs)/DEG;p.lat+=dy/r.M/DEG})});mvDone();saveDraft();M.lastPanel='';scheduleDraw()}
 
 // freehand: draw the outline with one finger, it is simplified into corner points
 function dpSimplify(P,eps){
@@ -1545,8 +1559,8 @@ function pMove(e){
   if(g.t==='draw'){var l=g.pts[g.pts.length-1];if(Math.hypot(p.x-l.x,p.y-l.y)>3){g.pts.push({x:p.x,y:p.y});g.moved=true;scheduleDraw()}return}
   if(!g.moved&&Math.hypot(p.x-g.sx,p.y-g.sy)>8)g.moved=true;
   if(g.t==='pan'){panBy(p.x-g.lx,p.y-g.ly);g.lx=p.x;g.ly=p.y}
-  else if(g.t==='moveall'){if(g.moved){shiftAll(p.x-g.lx,p.y-g.ly);g.lx=p.x;g.ly=p.y;scheduleDraw()}}
-  else if(g.t==='vertex'&&g.moved){M.sel=g.vi;moveVertex(g.vi,p.x+g.ox,p.y+g.oy)}
+  else if(g.t==='moveall'){if(g.moved){if(!g.sn){mvSnap();g.sn=true}shiftAll(p.x-g.lx,p.y-g.ly);g.lx=p.x;g.ly=p.y;scheduleDraw()}}
+  else if(g.t==='vertex'&&g.moved){if(!g.sn){editSnap(act());g.sn=true}M.sel=g.vi;moveVertex(g.vi,p.x+g.ox,p.y+g.oy)}
 }
 function pUp(e){
   var pt=M.ptrs[e.pointerId];if(!pt)return;
@@ -1560,11 +1574,11 @@ function pUp(e){
   if(left.length)return;
   M.g=null;
   if(g.t==='draw'){if(e.type==='pointercancel')scheduleDraw();else finishDraw(g);return}
-  if(g.t==='moveall'){if(g.moved)saveDraft();M.lastPanel='';scheduleDraw();return}
+  if(g.t==='moveall'){if(g.moved){if(g.sn)mvDone();saveDraft()}M.lastPanel='';scheduleDraw();return}
   if(g.t==='vertex'){
     M.loupe=null;
-    if(e.type==='pointercancel'){if(g.backup){var c=act()[g.vi];if(c)Object.keys(g.backup).forEach(function(k){c[k]=g.backup[k]})}M.sel=-1;scheduleDraw();return}
-    if(g.moved){M.sel=-1;saveDraft();scheduleDraw();return}
+    if(e.type==='pointercancel'){if(g.backup){var c=act()[g.vi];if(c)Object.keys(g.backup).forEach(function(k){c[k]=g.backup[k]})}if(g.sn&&M.estk)M.estk.pop();M.sel=-1;scheduleDraw();return}
+    if(g.moved){if(g.sn){var et=M.estk&&M.estk[M.estk.length-1];if(et)et.after=JSON.stringify(act())}M.sel=-1;saveDraft();scheduleDraw();if(MS.add!=='edit'&&!M.mv)toast('Point '+(g.vi+1)+' moved by hand'+(g.backup&&g.backup.src==='tape'?'. It is no longer from the tape lengths':'')+'. Tap Undo to put it back');return}
     M.sel=g.vi;scheduleDraw();if(MS.add==='edit'&&!M.view&&!M.split&&!M.mv&&M.ring<0){M.edit={kind:'point',i:g.vi};mapBottom();editReveal();return}selectVertex(g.vi);return;
   }
   saveView();
@@ -1592,7 +1606,7 @@ function gcPhotos(){
   var scan=function(o){if(o.sk&&o.sk.bg)used[o.sk.bg.id]=1;if(o.tape&&o.tape.sk&&o.tape.sk.bg)used[o.tape.sk.bg.id]=1;[o.corners].concat((o.holes||[]).map(function(h){return h.corners})).forEach(function(r){(r||[]).forEach(function(c){(c.ph||[]).forEach(function(id){used[id]=1})})})};
   S.plots.forEach(scan);scan(S.draft);
   var scanS=function(t){(String(t||'').match(/"ph":\[[^\]]*\]/g)||[]).forEach(function(m){try{JSON.parse('{'+m+'}').ph.forEach(function(id){used[id]=1})}catch(e){}})};
-  (M.rdo||[]).forEach(function(r){scanS(r.before);scanS(r.after)});(M.estk||[]).forEach(function(t){scanS(t.snap);scanS(t.after)});(M.mrdo||[]).forEach(function(r){(r.c.ph||[]).forEach(function(id){used[id]=1})});
+  (M.rdo||[]).forEach(function(r){scanS(r.before);scanS(r.after)});(M.estk||[]).forEach(function(t){scanS(t.snap);scanS(t.after)});(M.mvstk||[]).forEach(function(t){scanS(t.snap);scanS(t.after)});(M.mrdo||[]).forEach(function(r){(r.c.ph||[]).forEach(function(id){used[id]=1})});
   phTx('readonly',function(st){return st.getAllKeys()}).then(function(keys){(keys||[]).forEach(function(k){if(!used[k])phDel(k)})}).catch(function(){});
 }
 function selectVertex(i){
@@ -1754,7 +1768,7 @@ function mapBottom(){
   }else if(sp){
     h=splitCardHTML();
   }else if(M.mv){
-    h='<div class="mcard"><b>Move plot</b><div class="tiny">Drag on the map to move the whole plot. Use two fingers to move the map. Plot is far away? Move the map to your land and tap the button below.</div><div class="row" style="margin-top:8px"><button data-mv="W">&#9664;</button><button data-mv="N">&#9650;</button><button data-mv="S">&#9660;</button><button data-mv="E">&#9654;</button></div>'+chipsHTML('mvSt',lenSteps().map(function(x){return x.l}),Math.min(MS.estep==null?1:MS.estep,3),'Arrow step')+'<div class="row" style="margin-top:8px"><button id="mvL">&#10226; 5°</button><button id="mvl">&#10226; 1°</button><button id="mvr">1° &#10227;</button><button id="mvR">5° &#10227;</button></div><div class="row" style="margin-top:8px"><button id="mvC">&#127919; Put plot in the middle of the map</button></div><div class="row" style="margin-top:8px"><button class="pri" id="mvDone">Done</button></div></div>';
+    h='<div class="mcard mvp"><div class="row"><button data-mv="W" aria-label="West">&#9664;</button><button data-mv="N" aria-label="North">&#9650;</button><button data-mv="S" aria-label="South">&#9660;</button><button data-mv="E" aria-label="East">&#9654;</button><button id="mvL" aria-label="Turn left 5 degrees">&#10226;5°</button><button id="mvl" aria-label="Turn left 1 degree">&#10226;1°</button><button id="mvr" aria-label="Turn right 1 degree">1°&#10227;</button><button id="mvR" aria-label="Turn right 5 degrees">5°&#10227;</button></div>'+chipsHTML('mvSt',lenSteps().map(function(x){return x.l}),Math.min(MS.estep==null?1:MS.estep,3),'Arrow step')+'<div class="row"><button id="mvC" title="Put plot in the middle of the map">&#127919; To middle</button><button id="mvU"'+(mvCan()?'':' disabled')+'>&#8630; Undo</button><button class="pri" id="mvDone">Done</button></div></div>';
   }else if(M.edit&&!M.view&&M.ring<0&&MS.add==='edit'&&(h=editCardHTML())){
     // edit card rendered by editCardHTML
   }else if(M.ring>=0&&!M.view){
@@ -1790,6 +1804,7 @@ function mapBottom(){
   if(q('#hRedo'))q('#hRedo').onclick=mapRedo;
   if(q('#hDone'))q('#hDone').onclick=endHole;
   if(q('#mvC'))q('#mvC').onclick=centrePlot;
+  if(q('#mvU'))q('#mvU').onclick=function(){if(!mvUndo())toast('Nothing to undo')};
   if(q('#mvDone'))q('#mvDone').onclick=function(){M.mv=false;M.lastPanel='';mapBottom();scheduleDraw()};
   el.querySelectorAll('[data-mv]').forEach(function(b){b.onclick=function(){var d=lenSteps()[Math.min(MS.estep==null?1:MS.estep,3)].m,k=b.dataset.mv;shiftMetres(k==='E'?d:k==='W'?-d:0,k==='N'?d:k==='S'?-d:0)}});
   if(q('#mvSt'))q('#mvSt').querySelectorAll('button').forEach(function(b){b.onclick=function(){MS.estep=+b.dataset.s;saveView();mapBottom()}});
@@ -1948,7 +1963,7 @@ function shiftAll(dx,dy){allRings(S.draft).forEach(function(r){r.forEach(functio
 function rotateAll(deg){
   var o=S.draft,lat0=0,lon0=0;o.corners.forEach(function(c){lat0+=c.lat;lon0+=c.lon});lat0/=o.corners.length;lon0/=o.corners.length;
   var th=deg*DEG,cs=Math.cos(th),sn=Math.sin(th);
-  allRings(o).forEach(function(r){var Q=toXY(r,lat0,lon0);r.forEach(function(c,i){var x=Q[i].x,y=Q[i].y,g=fromXY(x*cs+y*sn,-x*sn+y*cs,lat0,lon0);c.lat=g.lat;c.lon=g.lon})});
+  mvSnap();allRings(o).forEach(function(r){var Q=toXY(r,lat0,lon0);r.forEach(function(c,i){var x=Q[i].x,y=Q[i].y,g=fromXY(x*cs+y*sn,-x*sn+y*cs,lat0,lon0);c.lat=g.lat;c.lon=g.lon})});mvDone();
   saveDraft();scheduleDraw();
 }
 
@@ -1956,7 +1971,7 @@ function centrePlot(){
   var o=S.draft,C=o.corners;if(!C.length)return;
   var a=1e9,b=-1e9,c=1e9,e=-1e9;C.forEach(function(p){a=Math.min(a,p.lat);b=Math.max(b,p.lat);c=Math.min(c,p.lon);e=Math.max(e,p.lon)});
   var lat0=(a+b)/2,lon0=(c+e)/2;
-  allRings(o).forEach(function(r){var Q=toXY(r,lat0,lon0);r.forEach(function(p,i){var g=fromXY(Q[i].x,Q[i].y,MS.lat,MS.lon);p.lat=g.lat;p.lon=g.lon})});
+  mvSnap();allRings(o).forEach(function(r){var Q=toXY(r,lat0,lon0);r.forEach(function(p,i){var g=fromXY(Q[i].x,Q[i].y,MS.lat,MS.lon);p.lat=g.lat;p.lon=g.lon})});mvDone();
   saveDraft();M.lastPanel='';scheduleDraw();toast('Plot moved to the middle of the map');
 }
 
@@ -2097,8 +2112,8 @@ function placeTapeShape(make){
     var d=S.draft,m=make(org);d.corners=m.corners;d.holes=[];d.mode='corners';d.fp=null;d.tape=m.tape;
     saveDraft();closeSheet();if(typeof SK!=='undefined'&&SK.open){SK.open=false;skStore();$('#skv').style.display='none';document.body.style.overflow=''}
     M.ring=-1;M.split=null;M.view=null;M.refit=true;S.tab='map';render();gcPhotos();
-    if(where==='gps')toast('Plot placed where you stand. If the land is somewhere else: Tools → Move or turn → Put plot in the middle of the map');
-    else if(where==='else'){toolMove();toast('Plot is on the map. Move the map to your land, then tap Put plot in the middle of the map')}
+    if(where==='gps')toast('Plot placed where you stand. If the land is somewhere else: Tools → Move or turn → To middle');
+    else if(where==='else'){toolMove();toast('Plot is on the map. Move the map to your land, then tap To middle')}
     else toast('Plot placed in the middle of the map. Use Tools → Move or turn the plot to put it on the land');
   };
   var start=function(org,where){

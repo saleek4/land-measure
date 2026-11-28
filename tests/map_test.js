@@ -96,7 +96,8 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(sp === 4, 'fit keeps points');
 
   // 7) centre pin mode
-  await page.click('#mUndo'); await page.click('#mUndo'); await page.click('#mUndo'); await page.click('#mUndo');
+  // the first Undo now puts back the corner that was dragged in step 3 (dragging a corner is undoable); the next four remove the points
+  await page.click('#mUndo'); await page.click('#mUndo'); await page.click('#mUndo'); await page.click('#mUndo'); await page.click('#mUndo');
   ok((await draft()).corners.length === 0, 'undo removes all points');
   await page.click('#mLay'); await page.click('[data-add=centre]'); await page.mouse.click(cx + 150, cy + 150); // close popover
   await page.waitForSelector('#mAdd');
